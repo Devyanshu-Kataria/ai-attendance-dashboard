@@ -17,3 +17,14 @@ export interface StrikeEmployee {
   excused: string | null;
   behaviour_analysis: string | null;
 }
+
+export interface LeaveBalance {
+  employee_id: string;
+  employee_name: string;
+  sl_taken: number;
+  cl_taken: number;
+  el_taken: number;
+  sl_left: number;
+  cl_left: number;
+  el_left: number;
+}
