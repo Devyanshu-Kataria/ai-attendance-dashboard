@@ -1,0 +1,19 @@
+import { createClient } from '@supabase/supabase-js';
+
+export const supabaseUrl = 'https://xzzucltunvajlgxlexys.supabase.co';
+export const supabaseAnonKey = 'sb_publishable_QRWEQ_POUsNOy9-NSQXbGw_E4WX3Izn';
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+export type UserRole = 'admin' | 'employee';
+
+export interface StrikeEmployee {
+  employee_id: string;
+  name: string;
+  monthly_late_count: number;
+  strike_level: number;
+  last_warning_date: string;
+  month_year: string;
+  excused: string | null;
+  behaviour_analysis: string | null;
+}
