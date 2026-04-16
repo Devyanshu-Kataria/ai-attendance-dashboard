@@ -10,20 +10,8 @@ export function LoginPage() {
   const [loading, setLoading]   = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  /** Surface errors to see what's wrong, but silence rate limits */
-  /** Surface errors to see what's wrong, but explain rate limits clearly */
+  /** Surface errors as returned by Supabase directly */
   const friendlyError = (msg: string): string => {
-    const lower = msg.toLowerCase();
-    
-    if (lower.includes('rate limit') || lower.includes('exceeded') || lower.includes('over_email_send_rate_limit'))
-      return 'Supabase Free Tier Limit: You can only test 2 sign-ups per hour. Please wait, or switch your IP using a VPN/Hotspot to test again.';
-
-    if (lower.includes('invalid login credentials'))
-      return 'Incorrect email or password. Please try again.';
-    if (lower.includes('already registered') || lower.includes('user already exists'))
-      return 'This email is already registered. Please sign in instead.';
-      
-    // Return other raw errors so we aren't completely blind if something else fails
     return msg; 
   };
 
@@ -37,38 +25,22 @@ export function LoginPage() {
 
     try {
       if (isSignUp) {
-        // ── 1. Validate EmpID against strike_counter ──
-        const { data: empData, error: empError } = await supabase
-          .from('strike_counter')
-          .select('employee_id')
-          .eq('employee_id', cleanEmpId)
-          .maybeSingle();
-
-        if (empError) throw empError;
-
-        if (!empData) {
-          setErrorMsg('Employee ID not found. Please check with HR and try again.');
-          setLoading(false);
-          return;
-        }
-
-        // ── 2. Create Supabase auth account with real email ──
+        // ── 1. Save their Employee ID to their account ──
+        // (RLS permitting, we can try this. If RLS blocks, we do it after but we must reload)
         const { error: signUpError } = await supabase.auth.signUp({ email: cleanEmail, password });
         if (signUpError) throw signUpError;
 
-        // ── 3. Upsert user_roles (works with or without pre-existing row) ──
         const { error: upsertError } = await supabase
           .from('user_roles')
           .upsert(
-            { email: cleanEmail, role: 'employee', employee_id: cleanEmpId },
-            { onConflict: 'employee_id' }
+            { email: cleanEmail, role: 'employee', employee_id: cleanEmpId }
           );
 
         if (upsertError) throw upsertError;
 
-        // ── 4. Auto sign-in → lands on dashboard ──
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
-        if (signInError) throw signInError;
+        // Force a clean reload so the dashboard fetches the newly created user_role
+        window.location.href = '/';
+        return;
 
       } else {
         // ── Sign In: just email + password ──
