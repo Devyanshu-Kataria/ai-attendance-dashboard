@@ -16,6 +16,7 @@ export interface StrikeEmployee {
   month_year: string;
   excused: string | null;
   behaviour_analysis: string | null;
+  excuse_provided?: string | null;
 }
 
 export interface LeaveBalance {

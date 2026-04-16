@@ -1,329 +1,400 @@
-import { useParams, Link } from "react-router";
+import { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { ChevronDown, Download, Heart, Mail, Edit2 } from "lucide-react";
-import { EMPLOYEES, TEAM_MEMBERS } from "../data/employees";
+import { Search } from "lucide-react";
+import { supabase } from "../../lib/supabase";
 
-const CALENDAR_HOURS: Record<number, string | null> = {
-  1: null,
-  2: "9 hrs", 3: "8 hrs", 4: "9 hrs", 5: "9 hrs", 6: "7 hrs", 7: null,
-  8: null, 9: "6 hrs", 10: "9 hrs", 11: "9 hrs", 12: "7.5 hrs", 13: "9 hrs", 14: null,
-  15: null, 16: "8.5 hrs", 17: "8 hrs", 18: "9 hrs", 19: "9 hrs", 20: null, 21: "CL",
-  22: null, 23: "9 hrs", 24: "8 hrs", 25: "9 hrs", 26: "9 hrs", 27: "8 hrs", 28: null,
-  29: null, 30: "9 hrs", 31: "9 hrs",
-};
-
+const PIE_COLORS = ["#4361EE", "#EEF2FF"];
 const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// March 2020 starts on Sunday (day 0)
-const MARCH_2020_START_DAY = 0;
-const MARCH_2020_TOTAL_DAYS = 31;
+interface DbEmployee {
+  employee_id: string;
+  name: string;
+  department: string | null;
+  designation: string | null;
+  date_of_joining: string | null;
+  manager_name: string | null;
+  monthly_late_count: number;
+  strike_level: number;
+}
 
-function buildCalendarGrid() {
-  const cells: Array<{ day: number | null; hours: string | null }> = [];
-  // Empty cells before start
-  for (let i = 0; i < MARCH_2020_START_DAY; i++) {
-    cells.push({ day: null, hours: null });
+interface DailyRecord {
+  date: string;
+  late_flag: string | null;
+  check_in: string | null;
+  check_out: string | null;
+}
+
+function buildCalendarGrid(
+  year: number,
+  month: number,
+  records: DailyRecord[]
+) {
+  const recordMap: Record<number, DailyRecord> = {};
+  records.forEach((r) => {
+    const d = new Date(r.date);
+    if (d.getFullYear() === year && d.getMonth() + 1 === month) {
+      recordMap[d.getDate()] = r;
+    }
+  });
+
+  const firstDay = new Date(year, month - 1, 1).getDay();
+  const totalDays = new Date(year, month, 0).getDate();
+
+  const cells: Array<{ day: number | null; record: DailyRecord | null }> = [];
+  for (let i = 0; i < firstDay; i++) cells.push({ day: null, record: null });
+  for (let d = 1; d <= totalDays; d++) {
+    cells.push({ day: d, record: recordMap[d] ?? null });
   }
-  for (let d = 1; d <= MARCH_2020_TOTAL_DAYS; d++) {
-    cells.push({ day: d, hours: CALENDAR_HOURS[d] ?? null });
-  }
-  // Pad to complete the last row
-  while (cells.length % 7 !== 0) {
-    cells.push({ day: null, hours: null });
-  }
-  // Group into weeks
-  const weeks: Array<Array<{ day: number | null; hours: string | null }>> = [];
-  for (let i = 0; i < cells.length; i += 7) {
-    weeks.push(cells.slice(i, i + 7));
-  }
+  while (cells.length % 7 !== 0) cells.push({ day: null, record: null });
+
+  const weeks: typeof cells[] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
   return weeks;
 }
 
-const calendarWeeks = buildCalendarGrid();
+function getCellStyle(record: DailyRecord | null): string {
+  if (!record) return "";
+  if (record.late_flag === "YES" || record.late_flag === "LC")
+    return "bg-orange-50 text-orange-500";
+  if (record.late_flag === "LEAVE" || record.late_flag === "CL")
+    return "bg-blue-50 text-blue-500";
+  if (record.late_flag === "SL")
+    return "bg-red-50 text-red-400";
+  if (record.late_flag === "EL")
+    return "bg-emerald-50 text-emerald-600";
+  if (record.late_flag === "NO") return "bg-[#EEF2FF] text-[#4361EE]";
+  return "bg-[#F4F6FA] text-[#8F9BB3]";
+}
 
-const PIE_COLORS = ["#4361EE", "#EEF2FF"];
+function getCellLabel(record: DailyRecord | null): string {
+  if (!record) return "";
+  if (record.late_flag === "YES" || record.late_flag === "LC") return "Late";
+  if (record.late_flag === "LEAVE" || record.late_flag === "CL") return "CL";
+  if (record.late_flag === "SL") return "SL";
+  if (record.late_flag === "EL") return "EL";
+  if (record.late_flag === "NO") return "On Time";
+  return record.late_flag || "";
+}
 
 export function ProfileDetails() {
-  const { id } = useParams();
-  const emp = EMPLOYEES.find((e) => e.id === id) || EMPLOYEES[0];
+  const [employees, setEmployees] = useState<DbEmployee[]>([]);
+  const [selectedEmp, setSelectedEmp] = useState<DbEmployee | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>([]);
+  const [loadingRecords, setLoadingRecords] = useState(false);
+  const [leaveBalance, setLeaveBalance] = useState<{ sl_taken: number; cl_taken: number; el_taken: number; sl_left: number; cl_left: number; el_left: number } | null>(null);
 
-  const pieData = [
-    { name: "Present", value: emp.attendance },
-    { name: "Absent", value: 100 - emp.attendance },
-  ];
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  );
 
-  const fields: Array<{ label: string; value: string }> = [
-    { label: "Email", value: emp.email },
-    { label: "Mobile Number", value: emp.mobile },
-    { label: "Date of Birth", value: emp.dob },
-    { label: "Blood Group", value: emp.bloodGroup },
-    { label: "Country", value: emp.country },
-    { label: "State", value: emp.state },
-    { label: "Employee Type", value: emp.empType },
-    { label: "Joining Date", value: emp.joiningDate },
-    { label: "Employee ID", value: emp.id },
-    { label: "Designation", value: emp.designation },
-    { label: "Department", value: emp.department },
-    { label: "Team", value: emp.team },
-    { label: "Experience", value: emp.experience },
-  ];
+  useEffect(() => {
+    supabase
+      .from("strike_counter")
+      .select("employee_id, name, department, designation, date_of_joining, manager_name, monthly_late_count, strike_level")
+      .then(({ data }) => {
+        if (data) {
+          setEmployees(data as DbEmployee[]);
+          setSelectedEmp(data[0] as DbEmployee);
+        }
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedEmp) return;
+    setLoadingRecords(true);
+    setLeaveBalance(null);
+    Promise.all([
+      supabase
+        .from("daily_records")
+        .select("date, late_flag, check_in, check_out")
+        .eq("employee_id", selectedEmp.employee_id),
+      supabase
+        .from("leave_balances")
+        .select("sl_taken, cl_taken, el_taken, sl_left, cl_left, el_left")
+        .eq("employee_id", selectedEmp.employee_id)
+        .single(),
+    ]).then(([drRes, lbRes]) => {
+      setDailyRecords((drRes.data as DailyRecord[]) || []);
+      if (lbRes.data) setLeaveBalance(lbRes.data);
+      setLoadingRecords(false);
+    });
+  }, [selectedEmp]);
+
+  const filteredEmployees = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return employees.filter(
+      (e) =>
+        !q ||
+        e.name.toLowerCase().includes(q) ||
+        e.employee_id.toLowerCase().includes(q)
+    );
+  }, [employees, searchQuery]);
+
+  // Filter records based on selectedMonth
+  const monthlyRecords = useMemo(() => {
+    return dailyRecords.filter((r) => r.date.startsWith(selectedMonth));
+  }, [dailyRecords, selectedMonth]);
+
+  // Pie chart: on-time vs late vs leave for selected month
+  const pieData = useMemo(() => {
+    const onTime = monthlyRecords.filter((r) => r.late_flag === "NO").length;
+    const late = monthlyRecords.filter(
+      (r) => r.late_flag === "YES" || r.late_flag === "LC"
+    ).length;
+    // Leave days = total leaves taken from leave_balances (not date-specific)
+    const leaveDays = leaveBalance
+      ? (leaveBalance.sl_taken + leaveBalance.cl_taken + leaveBalance.el_taken)
+      : 0;
+    const total = (monthlyRecords.length + leaveDays) || 1;
+    return [
+      { name: "On Time", value: Math.round((onTime / total) * 100) },
+      { name: "Late", value: Math.round((late / total) * 100) },
+      { name: "Leave", value: Math.round((leaveDays / total) * 100) },
+    ];
+  }, [monthlyRecords, leaveBalance]);
+
+  const PIE_COLORS_MULTI = ["#4361EE", "#F97316", "#EF4444"];
+
+  const calendarWeeks = useMemo(() => {
+    const [y, m] = selectedMonth.split("-").map(Number);
+    return buildCalendarGrid(y, m, monthlyRecords);
+  }, [selectedMonth, monthlyRecords]);
+
+  const monthLabel = useMemo(() => {
+    const [y, m] = selectedMonth.split("-").map(Number);
+    return new Date(y, m - 1).toLocaleString("en-US", {
+      month: "short",
+      year: "numeric",
+    });
+  }, [selectedMonth]);
 
   return (
     <div className="p-4 h-full overflow-auto">
       {/* Breadcrumb */}
       <div className="flex items-center gap-1 text-[11px] text-[#8F9BB3] mb-4">
-        <Link to="/" className="hover:text-[#4361EE] transition-colors">
-          Dashboard
-        </Link>
+        <Link to="/" className="hover:text-[#4361EE] transition-colors">Dashboard</Link>
         <span>/</span>
-        <Link to="/attendance" className="hover:text-[#4361EE] transition-colors">
-          Attendance List
-        </Link>
-        <span>/</span>
-        <span className="text-[#1B2559] font-medium">Profile Details</span>
+        <span className="text-[#1B2559] font-medium">Employee Details</span>
       </div>
 
       <div className="flex gap-4">
         {/* LEFT: Profile Card */}
-        <div className="bg-white rounded-xl shadow-sm border border-[#EEF0F6] p-5 flex flex-col" style={{ width: "320px", minWidth: "280px" }}>
-          {/* Top section */}
-          <div className="flex gap-4 mb-4 pb-4 border-b border-[#EEF0F6]">
-            <div className="flex-1 min-w-0">
-              <h2 className="text-sm font-semibold text-[#1B2559] mb-0.5">{emp.name}</h2>
-              <p className="text-[11px] text-[#8F9BB3] mb-2">
-                {emp.title} | {emp.type}
-              </p>
-              <p className="text-[11px] text-[#8F9BB3] leading-relaxed mb-3">
-                {emp.bio}
-              </p>
-              <div className="flex items-center gap-2 mb-3">
-                <button className="w-6 h-6 rounded-lg border border-[#EEF0F6] flex items-center justify-center hover:bg-[#EEF2FF] transition-colors">
-                  <Heart size={11} className="text-[#8F9BB3]" />
-                </button>
-                <button className="w-6 h-6 rounded-lg border border-[#EEF0F6] flex items-center justify-center hover:bg-[#EEF2FF] transition-colors">
-                  <Mail size={11} className="text-[#8F9BB3]" />
-                </button>
-              </div>
-              <div className="flex items-center gap-4">
-                <div>
-                  <p className="text-lg font-semibold text-[#1B2559] leading-tight">
-                    {emp.projectsCompleted}
-                  </p>
-                  <p className="text-[10px] text-[#8F9BB3]">Project Completed</p>
-                </div>
-                <div className="h-8 w-px bg-[#EEF0F6]" />
-                <div>
-                  <p className="text-lg font-semibold text-[#1B2559] leading-tight">
-                    {String(emp.ongoingProjects).padStart(2, "0")}
-                  </p>
-                  <p className="text-[10px] text-[#8F9BB3]">Ongoing</p>
-                </div>
-              </div>
+        {selectedEmp && (
+          <div
+            className="bg-white rounded-xl shadow-sm border border-[#EEF0F6] p-5 flex flex-col gap-3"
+            style={{ width: "280px", minWidth: "240px" }}
+          >
+            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-[#EEF2FF] mx-auto">
+              <span className="text-xl font-bold text-[#4361EE]">
+                {selectedEmp.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+              </span>
             </div>
-            <div className="shrink-0">
-              <img
-                src={emp.avatar}
-                alt={emp.name}
-                className="w-20 h-20 rounded-xl object-cover"
-              />
+            <div className="text-center">
+              <p className="text-sm font-semibold text-[#1B2559]">{selectedEmp.name}</p>
+              <p className="text-[11px] text-[#8F9BB3]">{selectedEmp.designation || "—"}</p>
+            </div>
+            <div className="border-t border-[#EEF0F6] pt-3 flex flex-col gap-2.5">
+              {[
+                { label: "Employee ID", value: selectedEmp.employee_id },
+                { label: "Department", value: selectedEmp.department || "—" },
+                { label: "Designation", value: selectedEmp.designation || "—" },
+                { label: "Date of Joining", value: selectedEmp.date_of_joining ? new Date(selectedEmp.date_of_joining).toLocaleDateString("en-IN") : "—" },
+                { label: "Manager", value: selectedEmp.manager_name || "—" },
+                { label: "Strike Level", value: String(selectedEmp.strike_level) },
+                { label: "Late Days (Month)", value: String(selectedEmp.monthly_late_count) },
+              ].map((f) => (
+                <div key={f.label} className="flex items-start gap-2">
+                  <span className="text-[11px] text-[#8F9BB3] w-28 shrink-0">{f.label}</span>
+                  <span className="text-[11px] text-[#1B2559] font-medium">{f.value}</span>
+                </div>
+              ))}
             </div>
           </div>
+        )}
 
-          {/* Fields */}
-          <div className="flex flex-col gap-2.5 flex-1">
-            {fields.map((f) => (
-              <div key={f.label} className="flex items-center gap-3">
-                <span className="text-[11px] text-[#8F9BB3] w-28 shrink-0">{f.label}</span>
-                <span className="text-[11px] text-[#1B2559] font-medium">{f.value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* Edit button */}
-          <button className="mt-4 flex items-center gap-2 self-end text-xs text-[#4361EE] font-medium border border-[#4361EE] rounded-lg px-3 py-1.5 hover:bg-[#EEF2FF] transition-colors">
-            <Edit2 size={11} />
-            Edit Profile
-          </button>
-        </div>
-
-        {/* CENTER: Attendance + Calendar */}
+        {/* CENTER: Pie Chart + Calendar */}
         <div className="flex flex-col gap-4 flex-1 min-w-0">
-          {/* Attendance Donut */}
+          {/* Pie chart */}
           <div className="bg-white rounded-xl shadow-sm border border-[#EEF0F6] p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-[#1B2559]">% Of Attendance</h3>
+              <h3 className="text-sm font-semibold text-[#1B2559]">Attendance Breakdown</h3>
               <div className="flex items-center gap-2">
-                <button className="flex items-center gap-1 text-xs text-[#8F9BB3] border border-[#EEF0F6] rounded-lg px-2 py-1">
-                  Month <ChevronDown size={11} />
-                </button>
-                <button className="flex items-center gap-1 text-xs text-[#8F9BB3] border border-[#EEF0F6] rounded-lg px-2 py-1">
-                  2020 <ChevronDown size={11} />
-                </button>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="text-[11px] font-semibold text-[#8F9BB3] bg-[#F4F6FA] border border-[#EEF0F6] rounded-lg px-2 py-1 outline-none focus:border-[#4361EE] cursor-pointer"
+                />
               </div>
             </div>
-
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-8">
               <div style={{ width: 160, height: 160 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={pieData}
-                      innerRadius={52}
-                      outerRadius={70}
+                      innerRadius={50}
+                      outerRadius={68}
                       startAngle={90}
                       endAngle={-270}
                       dataKey="value"
                       strokeWidth={0}
                     >
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index]} />
+                      {pieData.map((_, index) => (
+                        <Cell key={index} fill={PIE_COLORS_MULTI[index]} />
                       ))}
                     </Pie>
-                    <Tooltip
-                      formatter={(value) => [`${value}%`, ""]}
-                      contentStyle={{
-                        fontSize: "11px",
-                        border: "1px solid #EEF0F6",
-                        borderRadius: "8px",
-                      }}
-                    />
+                    <Tooltip formatter={(value) => [`${value}%`, ""]} contentStyle={{ fontSize: "11px", border: "1px solid #EEF0F6", borderRadius: "8px" }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-
               <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-sm bg-[#4361EE]" />
-                  <div>
-                    <p className="text-sm font-semibold text-[#1B2559]">{emp.attendance}%</p>
-                    <p className="text-[11px] text-[#8F9BB3]">Present</p>
+                {pieData.map((entry, i) => (
+                  <div key={entry.name} className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: PIE_COLORS_MULTI[i] }} />
+                    <div>
+                      <p className="text-sm font-semibold text-[#1B2559]">{entry.value}%</p>
+                      <p className="text-[11px] text-[#8F9BB3]">{entry.name}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-sm bg-[#EEF2FF]" style={{ border: "1px solid #4361EE" }} />
-                  <div>
-                    <p className="text-sm font-semibold text-[#1B2559]">{100 - emp.attendance}%</p>
-                    <p className="text-[11px] text-[#8F9BB3]">Absent</p>
-                  </div>
-                </div>
-                <button className="flex items-center gap-1.5 text-[11px] text-[#4361EE] font-medium mt-2">
-                  <Download size={12} />
-                  Download Data
-                </button>
+                ))}
               </div>
             </div>
           </div>
 
-          {/* Attendance Calendar */}
+          {/* Leave Balance Cards */}
+          {leaveBalance && (
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: 'Sick Leave', taken: leaveBalance.sl_taken, left: leaveBalance.sl_left, color: 'text-red-500', bar: 'bg-red-400' },
+                { label: 'Casual Leave', taken: leaveBalance.cl_taken, left: leaveBalance.cl_left, color: 'text-[#4361EE]', bar: 'bg-[#4361EE]' },
+                { label: 'Earned Leave', taken: leaveBalance.el_taken, left: leaveBalance.el_left, color: 'text-emerald-600', bar: 'bg-emerald-500' },
+              ].map((item) => {
+                const total = item.taken + item.left || 1;
+                return (
+                  <div key={item.label} className="bg-white rounded-xl border border-[#EEF0F6] p-3 shadow-sm">
+                    <p className="text-[10px] font-semibold text-[#8F9BB3] uppercase tracking-wider mb-1">{item.label}</p>
+                    <div className="flex items-end justify-between mb-1.5">
+                      <span className={`text-lg font-bold ${item.color}`}>{item.left}</span>
+                      <span className="text-[10px] text-[#8F9BB3]">{item.taken} used</span>
+                    </div>
+                    <div className="h-1.5 bg-[#EEF0F6] rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${item.bar}`} style={{ width: `${Math.round((item.taken / total) * 100)}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Calendar */}
           <div className="bg-white rounded-xl shadow-sm border border-[#EEF0F6] p-4 flex-1">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-[#1B2559]">
-                Attendance Calendar - Mar, 2020
+                Attendance Calendar — {monthLabel}
               </h3>
               <div className="flex items-center gap-2">
-                <button className="flex items-center gap-1 text-xs text-[#8F9BB3] border border-[#EEF0F6] rounded-lg px-2 py-1">
-                  Mar <ChevronDown size={11} />
-                </button>
-                <button className="flex items-center gap-1 text-xs text-[#8F9BB3] border border-[#EEF0F6] rounded-lg px-2 py-1">
-                  2020 <ChevronDown size={11} />
-                </button>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="text-[11px] font-semibold text-[#8F9BB3] bg-[#F4F6FA] border border-[#EEF0F6] rounded-lg px-2 py-1 outline-none focus:border-[#4361EE] cursor-pointer"
+                />
               </div>
             </div>
-
-            {/* Calendar Grid */}
-            <div className="w-full">
-              {/* Day headers */}
-              <div className="grid grid-cols-7 mb-1">
-                {DAYS_OF_WEEK.map((d) => (
-                  <div
-                    key={d}
-                    className="text-center text-[10px] font-semibold text-[#8F9BB3] py-1"
-                  >
-                    {d}
+            {loadingRecords ? (
+              <div className="text-center text-sm text-[#8F9BB3] py-8">Loading...</div>
+            ) : (
+              <div className="w-full">
+                <div className="grid grid-cols-7 mb-1">
+                  {DAYS_OF_WEEK.map((d) => (
+                    <div key={d} className="text-center text-[10px] font-semibold text-[#8F9BB3] py-1">{d}</div>
+                  ))}
+                </div>
+                {calendarWeeks.map((week, wi) => (
+                  <div key={wi} className="grid grid-cols-7 border-t border-[#EEF0F6]">
+                    {week.map((cell, ci) => (
+                      <div
+                        key={ci}
+                        className="relative min-h-[44px] px-1 pt-1 pb-1 border-l first:border-l-0 border-[#EEF0F6]"
+                      >
+                        {cell.day !== null && (
+                          <>
+                            <span className="text-[10px] font-semibold text-[#8F9BB3] block mb-0.5">{cell.day}</span>
+                            {cell.record && (
+                              <div className={`text-[9px] font-medium px-1 py-0.5 rounded text-center ${getCellStyle(cell.record)}`}>
+                                {getCellLabel(cell.record)}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
-              {/* Weeks */}
-              {calendarWeeks.map((week, wi) => (
-                <div key={wi} className="grid grid-cols-7 border-t border-[#EEF0F6]">
-                  {week.map((cell, ci) => (
-                    <div
-                      key={ci}
-                      className={`relative min-h-[44px] px-1 pt-1 pb-1 border-l first:border-l-0 border-[#EEF0F6] ${
-                        cell.day === 10 ? "bg-[#EEF2FF]" : ""
-                      }`}
-                    >
-                      {cell.day !== null && (
-                        <>
-                          <span
-                            className={`text-[10px] font-semibold block mb-0.5 ${
-                              cell.day === 10
-                                ? "text-[#4361EE]"
-                                : "text-[#8F9BB3]"
-                            }`}
-                          >
-                            {cell.day}
-                          </span>
-                          {cell.hours && (
-                            <div
-                              className={`text-[9px] font-medium px-1 py-0.5 rounded text-center ${
-                                cell.hours === "CL"
-                                  ? "bg-red-50 text-red-400"
-                                  : cell.day === 10
-                                  ? "bg-[#4361EE] text-white"
-                                  : "bg-[#F4F6FA] text-[#8F9BB3]"
-                              }`}
-                            >
-                              {cell.hours}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            )}
+
+            {/* Legend */}
+            <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-[#EEF0F6]">
+              {[
+                { label: 'On Time', cls: 'bg-[#EEF2FF] text-[#4361EE]' },
+                { label: 'Late', cls: 'bg-orange-50 text-orange-500' },
+                { label: 'CL', cls: 'bg-blue-50 text-blue-500' },
+                { label: 'SL', cls: 'bg-red-50 text-red-400' },
+                { label: 'EL', cls: 'bg-emerald-50 text-emerald-600' },
+              ].map(l => (
+                <span key={l.label} className={`text-[9px] font-semibold px-2 py-0.5 rounded ${l.cls}`}>{l.label}</span>
               ))}
+              <span className="text-[9px] text-[#8F9BB3] ml-auto">Leave dates shown when available in records</span>
             </div>
           </div>
         </div>
 
-        {/* RIGHT: Team Members */}
-        <div className="bg-white rounded-xl shadow-sm border border-[#EEF0F6] p-4" style={{ width: "220px", minWidth: "200px" }}>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-[#1B2559]">Team Members</h3>
-            <span className="text-[11px] text-[#8F9BB3] bg-[#F4F6FA] rounded-lg px-2 py-0.5">
-              16
-            </span>
+        {/* RIGHT: Employees list */}
+        <div
+          className="bg-white rounded-xl shadow-sm border border-[#EEF0F6] p-4 flex flex-col"
+          style={{ width: "240px", minWidth: "200px" }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-[#1B2559]">Employees</h3>
+            <span className="text-[11px] text-[#8F9BB3] bg-[#F4F6FA] rounded-lg px-2 py-0.5">{employees.length}</span>
           </div>
-          <div className="flex flex-col gap-4">
-            {TEAM_MEMBERS.map((member) => (
-              <div key={member.name} className="flex flex-col gap-1.5">
-                <div className="flex items-center gap-2">
-                  <img
-                    src={member.avatar}
-                    alt={member.name}
-                    className="w-8 h-8 rounded-full object-cover shrink-0"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-semibold text-[#1B2559] leading-tight truncate">
-                      {member.name}
-                    </p>
-                    <p className="text-[10px] text-[#8F9BB3] leading-tight">
-                      {member.role}
-                    </p>
-                  </div>
-                  <span className="text-[11px] font-semibold text-[#1B2559] shrink-0">
-                    {member.attendance}%
+          {/* Search */}
+          <div className="flex items-center gap-2 bg-[#F4F6FA] rounded-lg px-3 py-1.5 mb-3">
+            <Search size={12} className="text-[#8F9BB3] shrink-0" />
+            <input
+              placeholder="Name or ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-transparent text-[11px] text-[#1B2559] outline-none flex-1 placeholder:text-[#8F9BB3]"
+            />
+          </div>
+          {/* List */}
+          <div className="flex flex-col gap-1 overflow-y-auto flex-1">
+            {filteredEmployees.map((emp) => (
+              <button
+                key={emp.employee_id}
+                onClick={() => setSelectedEmp(emp)}
+                className={`flex items-center gap-2 px-2 py-2 rounded-lg text-left transition-colors w-full ${
+                  selectedEmp?.employee_id === emp.employee_id
+                    ? "bg-[#EEF2FF] text-[#4361EE]"
+                    : "hover:bg-[#F4F6FA] text-[#1B2559]"
+                }`}
+              >
+                <div className="w-7 h-7 rounded-full bg-[#EEF2FF] flex items-center justify-center shrink-0">
+                  <span className="text-[9px] font-bold text-[#4361EE]">
+                    {emp.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
                   </span>
                 </div>
-                {/* Progress bar */}
-                <div className="w-full h-1.5 bg-[#EEF2FF] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-[#4361EE] rounded-full"
-                    style={{ width: `${member.attendance}%` }}
-                  />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-semibold truncate">{emp.name}</p>
+                  <p className="text-[10px] text-[#8F9BB3] truncate">{emp.employee_id}</p>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
-import { Search, ChevronDown, ChevronRight, ChevronLeft, Check, X, RefreshCw } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ChevronLeft, Check, X, RefreshCw, Download } from 'lucide-react';
 import { supabase, type StrikeEmployee } from '../../lib/supabase';
 import { useAuth } from '../App';
 
@@ -20,8 +20,6 @@ export function AttendanceList() {
   const [employees, setEmployees] = useState<StrikeEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [sortBy, setSortBy] = useState<'count-desc' | 'count-asc' | 'name-asc' | 'name-desc'>('count-desc');
 
   useEffect(() => {
@@ -69,8 +67,25 @@ export function AttendanceList() {
       return 0;
     });
 
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const handleDownloadCSV = () => {
+    const headers = ['Employee Name', 'Employee ID', 'Late Days', 'Strike Level', 'Excuse', 'Status'];
+    const rows = filtered.map(emp => [
+      `"${emp.name}"`,
+      `"${emp.employee_id}"`,
+      emp.monthly_late_count,
+      emp.strike_level,
+      `"${(emp.excuse_provided || '').replace(/"/g, '""')}"`,
+      `"${emp.excused || 'N/A'}"`
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(e => e.join(','))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "attendance_data.csv");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
 
   return (
     <div className="p-4">
@@ -92,7 +107,7 @@ export function AttendanceList() {
             <input
               placeholder="Search by name or ID"
               value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="text-xs text-[#1B2559] outline-none placeholder:text-[#8F9BB3] w-40"
             />
             <Search size={13} className="text-[#8F9BB3]" />
@@ -115,14 +130,21 @@ export function AttendanceList() {
           >
             <RefreshCw size={12} /> Refresh
           </button>
+          {/* Download CSV */}
+          <button
+            onClick={handleDownloadCSV}
+            className="flex items-center gap-1.5 text-xs text-emerald-600 bg-white border border-[#EEF0F6] rounded-lg px-3 py-1.5 shadow-sm hover:border-emerald-600 transition-colors font-medium"
+          >
+            <Download size={12} /> Download Data
+          </button>
         </div>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-[#EEF0F6] overflow-hidden">
         {/* Table Header */}
-        <div className="grid grid-cols-[1.8fr_1fr_1fr_1fr_1.2fr_1.5fr] gap-4 px-5 py-3 border-b border-[#EEF0F6] bg-[#FAFBFF]">
-          {['Employee Name', 'Employee ID', 'Late Days', 'Strike Level', 'Status', 'HR Actions'].map((h) => (
+        <div className="grid grid-cols-[1.5fr_1fr_0.8fr_0.8fr_1.5fr_1fr_1.5fr] gap-4 px-5 py-3 border-b border-[#EEF0F6] bg-[#FAFBFF]">
+          {['Employee Name', 'Employee ID', 'Late Days', 'Strike Level', 'Excuse', 'Status', 'HR Actions'].map((h) => (
             <span key={h} className="text-[11px] font-semibold text-[#8F9BB3] uppercase tracking-wide">{h}</span>
           ))}
         </div>
@@ -130,14 +152,14 @@ export function AttendanceList() {
         {/* Table Body */}
         {loading ? (
           <div className="py-12 text-center text-sm text-[#8F9BB3]">Loading data from Supabase...</div>
-        ) : paginated.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="py-12 text-center text-sm text-[#8F9BB3]">No employees found.</div>
         ) : (
-          paginated.map((emp, i) => (
+          filtered.map((emp, i) => (
             <div
               key={emp.employee_id}
-              className={`grid grid-cols-[1.8fr_1fr_1fr_1fr_1.2fr_1.5fr] gap-4 px-5 py-3 items-center transition-colors hover:bg-[#F9FAFB] ${
-                i < paginated.length - 1 ? 'border-b border-[#EEF0F6]' : ''
+              className={`grid grid-cols-[1.5fr_1fr_0.8fr_0.8fr_1.5fr_1fr_1.5fr] gap-4 px-5 py-3 items-center transition-colors hover:bg-[#F9FAFB] ${
+                i < filtered.length - 1 ? 'border-b border-[#EEF0F6]' : ''
               }`}
             >
               {/* Name */}
@@ -164,8 +186,15 @@ export function AttendanceList() {
               {/* Strike level */}
               <span className="text-xs text-[#1B2559] font-medium">{emp.strike_level}</span>
 
+              {/* Excuse */}
+              <span className="text-xs text-[#8F9BB3] italic truncate" title={emp.excuse_provided || 'None'}>
+                {emp.excuse_provided || 'None'}
+              </span>
+
               {/* Status badge */}
-              <StatusBadge count={emp.monthly_late_count} excused={emp.excused} />
+              <div className="flex">
+                <StatusBadge count={emp.monthly_late_count} excused={emp.excused} />
+              </div>
 
               {/* Actions */}
               {emp.excused !== 'APPROVED' ? (
@@ -191,43 +220,6 @@ export function AttendanceList() {
         )}
       </div>
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between mt-4">
-        <span className="text-xs text-[#8F9BB3]">{filtered.length} employees</span>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-xs text-[#8F9BB3]">
-            <span>Items per page</span>
-            <select
-              value={itemsPerPage}
-              onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-              className="border border-[#EEF0F6] rounded-lg px-2 py-1 text-xs text-[#1B2559] outline-none bg-white"
-            >
-              {ITEMS_PER_PAGE_OPTIONS.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[#8F9BB3]">
-              {(currentPage - 1) * itemsPerPage + 1}–{Math.min(currentPage * itemsPerPage, filtered.length)} of {filtered.length}
-            </span>
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="w-7 h-7 rounded-lg border border-[#EEF0F6] flex items-center justify-center hover:bg-[#EEF2FF] disabled:opacity-40 transition-colors bg-white"
-            >
-              <ChevronLeft size={13} className="text-[#8F9BB3]" />
-            </button>
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages || totalPages === 0}
-              className="w-7 h-7 rounded-lg border border-[#EEF0F6] flex items-center justify-center hover:bg-[#EEF2FF] disabled:opacity-40 transition-colors bg-white"
-            >
-              <ChevronRight size={13} className="text-[#8F9BB3]" />
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

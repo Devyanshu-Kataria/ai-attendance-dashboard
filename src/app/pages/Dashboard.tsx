@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -13,18 +13,7 @@ import { DEPARTMENTS } from '../data/employees';
 import { supabase, type StrikeEmployee } from '../../lib/supabase';
 import { useAuth } from '../App';
 
-const chartData = [
-  { day: '1-Mon', ontime: 70, late: 28 },
-  { day: '2-Tue', ontime: 80, late: 30 },
-  { day: '3-Wed', ontime: 85, late: 30 },
-  { day: '4-Thu', ontime: 72, late: 22 },
-  { day: '5-Fri', ontime: 90, late: 32 },
-  { day: '6-Sat', ontime: 58, late: 18 },
-  { day: '7-Sun', ontime: 100, late: 28 },
-  { day: '8-Mon', ontime: 78, late: 24 },
-  { day: '9-Tue', ontime: 88, late: 28 },
-  { day: '10-Wed', ontime: 95, late: 30 },
-];
+// Chart data loaded dynamically
 
 const deptIcons: Record<string, React.ReactNode> = {
   Design: <Palette size={14} className="text-[#4361EE]" />,
@@ -74,17 +63,61 @@ export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
 
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [dailyChartData, setDailyChartData] = useState<any[]>([]);
+  const [rawDailyRecords, setRawDailyRecords] = useState<any[]>([]);
+  const [rawLeaveBalances, setRawLeaveBalances] = useState<any[]>([]);
+
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    fetchBarChartData();
+  }, [selectedMonth]);
+
+  const fetchBarChartData = async () => {
+    const { data } = await supabase
+      .from('daily_records')
+      .select('*')
+      .like('date', `${selectedMonth}-%`);
+    
+    if (data) {
+      setRawDailyRecords(data);
+      const aggregated: Record<string, { ontime: number; late: number }> = {};
+      data.forEach(r => {
+        const d = r.date.split('-')[2];
+        if (!aggregated[d]) aggregated[d] = { ontime: 0, late: 0 };
+        if (r.late_flag === 'YES' || r.late_flag === 'LC') {
+          aggregated[d].late += 1;
+        } else {
+          aggregated[d].ontime += 1;
+        }
+      });
+      const sortedKeys = Object.keys(aggregated).sort((a,b) => parseInt(a)-parseInt(b));
+      const newChartData = sortedKeys.map(k => ({
+        day: k,
+        ontime: aggregated[k].ontime,
+        late: aggregated[k].late
+      }));
+      setDailyChartData(newChartData);
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('strike_counter').select('*');
-    if (error) console.error('Error fetching data:', error);
-    else setEmployees(data || []);
+    const [empRes, leaveRes] = await Promise.all([
+      supabase.from('strike_counter').select('*'),
+      supabase.from('leave_balances').select('*'),
+    ]);
+    if (empRes.error) console.error('Error fetching data:', empRes.error);
+    else setEmployees(empRes.data || []);
+    if (leaveRes.data) setRawLeaveBalances(leaveRes.data);
     setLoading(false);
   };
 
@@ -109,11 +142,72 @@ export function Dashboard() {
     }
   };
 
-  const total = employees.length;
-  const lateTotal = employees.filter((e) => e.monthly_late_count > 0).length;
-  const onTime = total - lateTotal;
-  const atRisk = employees.filter((e) => e.monthly_late_count === 2).length;
-  const critical = employees.filter((e) => e.monthly_late_count >= 3).length;
+  const dashboardMetrics = useMemo(() => {
+    if (rawDailyRecords.length === 0) {
+      return { total: employees.length, late: '--', onTime: '--', atRisk: '--', critical: '--' };
+    }
+
+    const empLates: Record<string, number> = {};
+    rawDailyRecords.forEach(r => {
+      const eid = r.employee_id;
+      if (empLates[eid] === undefined) empLates[eid] = 0;
+      if (r.late_flag === 'YES' || r.late_flag === 'LC') {
+        empLates[eid] += 1;
+      }
+    });
+
+    const total = employees.length;
+    let late = 0;
+    let atRisk = 0;
+    let critical = 0;
+
+    Object.values(empLates).forEach(count => {
+       if (count > 0) late += 1;
+       if (count === 2) atRisk += 1;
+       if (count >= 3) critical += 1;
+    });
+
+    return { total, late, onTime: total - late, atRisk, critical };
+  }, [rawDailyRecords, employees]);
+
+  const { total, late: lateTotal, onTime, atRisk, critical } = dashboardMetrics;
+
+  const departmentStats = useMemo(() => {
+    const stats: Record<string, { name: string; total: number | string; ontime: number | string; late: number | string; leave: number | string }> = {};
+    const defaultDepts = Array.from(new Set(employees.map(e => e.department || 'Other')));
+    
+    defaultDepts.forEach(dept => {
+      stats[dept] = { name: dept, total: '--', ontime: '--', late: '--', leave: '--' };
+    });
+
+    if (rawDailyRecords.length > 0) {
+      defaultDepts.forEach(dept => {
+        stats[dept] = { name: dept, total: 0, ontime: 0, late: 0, leave: 0 };
+      });
+      rawDailyRecords.forEach(r => {
+        const dept = r.department || 'Other';
+        if (!stats[dept]) stats[dept] = { name: dept, total: 0, ontime: 0, late: 0, leave: 0 };
+        stats[dept].total = (stats[dept].total as number) + 1;
+        if (r.late_flag === 'YES' || r.late_flag === 'LC') {
+          stats[dept].late = (stats[dept].late as number) + 1;
+        } else if (r.late_flag === 'NO') {
+          stats[dept].ontime = (stats[dept].ontime as number) + 1;
+        }
+      });
+
+      // Add leave data from leave_balances joined via employee_id → department in employees
+      const empDeptMap: Record<string, string> = {};
+      employees.forEach(e => { empDeptMap[e.employee_id] = e.department || 'Other'; });
+      rawLeaveBalances.forEach(lb => {
+        const dept = empDeptMap[lb.employee_id];
+        if (dept && stats[dept]) {
+          const totalLeave = (lb.sl_taken || 0) + (lb.cl_taken || 0) + (lb.el_taken || 0);
+          stats[dept].leave = (stats[dept].leave as number) + totalLeave;
+        }
+      });
+    }
+    return Object.values(stats);
+  }, [rawDailyRecords, employees, rawLeaveBalances]);
 
   const filtered = employees
     .filter(FILTER_TABS[activeFilterTab].filter)
@@ -153,12 +247,15 @@ export function Dashboard() {
           <div className="bg-white rounded-xl p-4 shadow-sm border border-[#EEF0F6] flex-1">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold text-[#1B2559]">
-                Attendance Status — {new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                Attendance Status
               </h2>
               <div className="flex items-center gap-2">
-                <button className="flex items-center gap-1 text-xs text-[#8F9BB3] border border-[#EEF0F6] rounded-lg px-2 py-1">
-                  All Departments <Filter size={11} />
-                </button>
+                <input 
+                  type="month" 
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="text-xs text-[#8F9BB3] font-semibold border border-[#EEF0F6] bg-[#F4F6FA] rounded-lg px-2 py-1 outline-none focus:border-[#4361EE] focus:ring-1 focus:ring-[#4361EE] transition-colors cursor-pointer" 
+                />
               </div>
             </div>
             <div className="flex items-center gap-4 mb-3">
@@ -171,71 +268,32 @@ export function Dashboard() {
                 <span className="text-[11px] text-[#8F9BB3]">Late</span>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={chartData} barCategoryGap="30%" barGap={2} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0F2F8" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#8F9BB3' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: '#8F9BB3' }} axisLine={false} tickLine={false} domain={[0, 125]} ticks={[0, 25, 50, 75, 100, 125]} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: '#F4F6FA' }} />
-                <Bar dataKey="ontime" fill="#4361EE" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="late" fill="#B0C4FF" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {dailyChartData.length === 0 ? (
+              <div className="flex h-[260px] items-center justify-center text-[#8F9BB3] text-sm">
+                No data available for this month
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={dailyChartData} barCategoryGap="30%" barGap={2} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F0F2F8" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#8F9BB3' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#8F9BB3' }} axisLine={false} tickLine={false} domain={[0, 125]} ticks={[0, 25, 50, 75, 100, 125]} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: '#F4F6FA' }} />
+                  <Bar dataKey="ontime" fill="#4361EE" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="late" fill="#B0C4FF" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
-          {/* Bottom row */}
-          <div className="flex gap-3" style={{ height: '140px' }}>
-            {/* Pending appeals */}
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-[#EEF0F6] flex-1 overflow-hidden">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs font-semibold text-[#1B2559]">Pending Appeals</h3>
-                <button className="text-[11px] text-[#4361EE] font-medium" onClick={() => navigate('/attendance')}>View all</button>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                {employees.filter((e) => e.excused === 'PENDING').slice(0, 3).map((emp) => (
-                  <div key={emp.employee_id} className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[11px] font-medium text-[#1B2559]">{emp.name}</p>
-                      <p className="text-[10px] text-[#8F9BB3]">{emp.employee_id}</p>
-                    </div>
-                    <div className="flex gap-1">
-                      <button onClick={() => handleExcuseAction(emp.employee_id, 'APPROVED')}
-                        className="flex items-center px-2 py-0.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded text-[10px] font-medium transition-colors">
-                        <Check size={10} className="mr-0.5" /> Approve
-                      </button>
-                      <button onClick={() => handleExcuseAction(emp.employee_id, 'REJECTED')}
-                        className="flex items-center px-2 py-0.5 bg-red-50 text-red-500 hover:bg-red-100 rounded text-[10px] font-medium transition-colors">
-                        <X size={10} className="mr-0.5" /> Reject
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {employees.filter((e) => e.excused === 'PENDING').length === 0 && (
-                  <p className="text-[11px] text-[#8F9BB3]">No pending appeals.</p>
-                )}
-              </div>
-            </div>
 
-            {/* Add employee */}
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-[#EEF0F6] flex flex-col items-center justify-center" style={{ width: '150px' }}>
-              <div className="w-12 h-12 rounded-full bg-[#EEF2FF] flex items-center justify-center mb-2">
-                <Users size={22} className="text-[#4361EE]" />
-              </div>
-              <button
-                className="flex items-center gap-1 bg-[#4361EE] text-white text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-[#3451DD] transition-colors"
-                onClick={() => navigate('/attendance')}
-              >
-                <Plus size={11} /> View All
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* MIDDLE PANEL - Departments */}
         <div className="bg-white rounded-xl p-4 shadow-sm border border-[#EEF0F6] overflow-auto" style={{ width: '22%' }}>
           <h3 className="text-sm font-semibold text-[#1B2559] mb-3">All Departments</h3>
           <div className="flex flex-col gap-3">
-            {DEPARTMENTS.map((dept) => (
+            {departmentStats.map((dept) => (
               <div key={dept.name} className="border border-[#EEF0F6] rounded-xl p-3">
                 <div className="flex items-start justify-between mb-2">
                   <div>
@@ -253,12 +311,12 @@ export function Dashboard() {
                     </div>
                     <div className="flex items-center justify-end gap-1">
                       <span>Leave</span>
-                      <span className="font-semibold text-[#1B2559]">{dept.leave > 0 ? String(dept.leave).padStart(2, '0') : '--'}</span>
+                      <span className="font-semibold text-[#1B2559]">{dept.leave !== '--' ? String(dept.leave).padStart(2, '0') : '--'}</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 text-[11px] text-[#8F9BB3]">
-                  {deptIcons[dept.name]}
+                  {deptIcons[dept.name] || <Users size={14} className="text-[#8F9BB3]" />}
                   <span>{dept.name}</span>
                 </div>
               </div>
@@ -270,7 +328,7 @@ export function Dashboard() {
         <div className="bg-white rounded-xl shadow-sm border border-[#EEF0F6] flex flex-col overflow-hidden" style={{ width: '26%' }}>
           <div className="p-4 border-b border-[#EEF0F6]">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-[#1B2559]">Late Employees</span>
+              <span className="text-xs font-semibold text-[#1B2559]">Employees</span>
               <button onClick={fetchData} className="text-[10px] text-[#4361EE] font-medium hover:underline">Refresh</button>
             </div>
             {/* Filter tabs */}

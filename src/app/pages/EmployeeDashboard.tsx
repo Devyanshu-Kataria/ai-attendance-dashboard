@@ -16,6 +16,30 @@ export function EmployeeDashboard() {
   const [appealStatus, setAppealStatus] = useState<'success' | 'error' | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [dailyRecords, setDailyRecords] = useState<any[] | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+
+  useEffect(() => {
+    if (userEmployeeId && activeTab === 'calendar') {
+      fetchDailyRecords();
+    }
+  }, [userEmployeeId, activeTab, selectedMonth]);
+
+  const fetchDailyRecords = async () => {
+    setCalendarLoading(true);
+    const { data } = await supabase
+      .from('daily_records')
+      .select('*')
+      .eq('employee_id', userEmployeeId)
+      .like('date', `${selectedMonth}-%`);
+    setDailyRecords(data || []);
+    setCalendarLoading(false);
+  };
+
   useEffect(() => {
     if (userEmployeeId) {
       fetchEmployeeData();
@@ -26,12 +50,12 @@ export function EmployeeDashboard() {
   }, [userEmployeeId]);
 
   const fetchLeaveData = async () => {
-  const { data } = await supabase
-    .from('leave_balances')
-    .select('*')
-    .eq('employee_id', userEmployeeId)
-    .single();
-  if (data) setLeaveData(data);
+    const { data } = await supabase
+      .from('leave_balances')
+      .select('*')
+      .eq('employee_id', userEmployeeId)
+      .single();
+    if (data) setLeaveData(data);
   };
 
   const fetchEmployeeData = async () => {
@@ -53,7 +77,7 @@ export function EmployeeDashboard() {
     setSubmitting(true);
 
     try {
-      await fetch('http://localhost:5678/webhook/excuse-appeal', {
+      await fetch('http://192.168.1.2:5678/webhook/excuse-appeal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -97,33 +121,27 @@ export function EmployeeDashboard() {
 
   const excuseColor =
     employeeData?.excused === 'APPROVED' ? 'text-[#4361EE]'
-    : employeeData?.excused === 'PENDING' ? 'text-purple-600'
-    : employeeData?.excused === 'REJECTED' ? 'text-red-500'
-    : 'text-[#1B2559]';
+      : employeeData?.excused === 'PENDING' ? 'text-purple-600'
+        : employeeData?.excused === 'REJECTED' ? 'text-red-500'
+          : 'text-[#1B2559]';
 
-  // --- Calendar Dummy Data Generator ---
-  const today = new Date();
-  const currentMonth = today.getMonth();
-  const currentYear = today.getFullYear();
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
+  // --- Calendar Data Generator ---
+  const [yearStr, monthStr] = selectedMonth.split('-');
+  const currentYear = parseInt(yearStr, 10);
+  const currentMonthNum = parseInt(monthStr, 10) - 1; // 0-indexed
+
+  const daysInMonth = new Date(currentYear, currentMonthNum + 1, 0).getDate();
+  const firstDayOfMonth = new Date(currentYear, currentMonthNum, 1).getDay();
 
   const calendarCells = [];
-  for (let i = 0; i < firstDayOfMonth; i++) calendarCells.push({ date: null, content: null, type: 'normal' });
-  
+  for (let i = 0; i < firstDayOfMonth; i++) calendarCells.push({ date: null, record: null });
+
   for (let d = 1; d <= daysInMonth; d++) {
-    let content = null;
-    let type = 'normal'; // normal, late, leave
-    const isWeekend = [0, 6].includes(new Date(currentYear, currentMonth, d).getDay());
-    
-    if (d === 10 || d === 15) { content = 'Late'; type = 'late'; }
-    else if (d === 20) { content = 'CL'; type = 'leave'; }
-    else if (d < today.getDate() && !isWeekend) { content = 'On Time'; type = 'normal'; }
-    
-    calendarCells.push({ date: d, content, type });
+    const dateStr = `${selectedMonth}-${String(d).padStart(2, '0')}`;
+    const record = dailyRecords?.find(r => r.date === dateStr);
+    calendarCells.push({ date: d, record });
   }
-  // Fill remaining cells to complete the grid (multiple of 7)
-  while (calendarCells.length % 7 !== 0) calendarCells.push({ date: null, content: null, type: 'normal' });
+  while (calendarCells.length % 7 !== 0) calendarCells.push({ date: null, record: null });
 
   return (
     <div className="min-h-screen bg-[#F0F2F8] flex flex-col">
@@ -157,31 +175,28 @@ export function EmployeeDashboard() {
           <div className="flex border-b border-[#EEF0F6] mb-6 bg-white rounded-t-xl px-4">
             <button
               onClick={() => setActiveTab('info')}
-              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
-                activeTab === 'info'
-                  ? 'border-[#4361EE] text-[#4361EE]'
-                  : 'border-transparent text-[#8F9BB3] hover:text-[#1B2559]'
-              }`}
+              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${activeTab === 'info'
+                ? 'border-[#4361EE] text-[#4361EE]'
+                : 'border-transparent text-[#8F9BB3] hover:text-[#1B2559]'
+                }`}
             >
               <User size={13} /> My Information
             </button>
             <button
               onClick={() => setActiveTab('appeal')}
-              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
-                activeTab === 'appeal'
-                  ? 'border-[#4361EE] text-[#4361EE]'
-                  : 'border-transparent text-[#8F9BB3] hover:text-[#1B2559]'
-              }`}
+              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${activeTab === 'appeal'
+                ? 'border-[#4361EE] text-[#4361EE]'
+                : 'border-transparent text-[#8F9BB3] hover:text-[#1B2559]'
+                }`}
             >
               <FileText size={13} /> Appeal for Excuse
             </button>
             <button
               onClick={() => setActiveTab('calendar')}
-              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
-                activeTab === 'calendar'
-                  ? 'border-[#4361EE] text-[#4361EE]'
-                  : 'border-transparent text-[#8F9BB3] hover:text-[#1B2559]'
-              }`}
+              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${activeTab === 'calendar'
+                ? 'border-[#4361EE] text-[#4361EE]'
+                : 'border-transparent text-[#8F9BB3] hover:text-[#1B2559]'
+                }`}
             >
               <CalendarDays size={13} /> Attendance Calendar
             </button>
@@ -339,53 +354,66 @@ export function EmployeeDashboard() {
                   {/* Calendar View */}
                   <div className="bg-white rounded-xl border border-[#EEF0F6] p-6 shadow-sm">
                     <div className="flex justify-between items-center mb-6">
-                      <h2 className="text-sm font-bold text-[#1B2559]">
-                        Attendance Calendar - {today.toLocaleString('default', { month: 'short', year: 'numeric' })}
-                      </h2>
+                      <h2 className="text-sm font-bold text-[#1B2559]">Attendance Calendar</h2>
+                      <input
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        className="text-xs text-[#8F9BB3] font-semibold border border-[#EEF0F6] bg-[#F4F6FA] rounded-lg px-3 py-1.5 outline-none focus:border-[#4361EE] focus:ring-1 focus:ring-[#4361EE] transition-colors cursor-pointer"
+                      />
                     </div>
 
-                    <div className="border border-[#EEF0F6] rounded-lg overflow-hidden">
-                      {/* Days header */}
-                      <div className="grid grid-cols-7 bg-[#F4F6FA] border-b border-[#EEF0F6]">
-                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                          <div key={day} className="py-2 text-center text-[10px] font-bold text-[#8F9BB3] uppercase tracking-wider border-r border-[#EEF0F6] last:border-r-0">
-                            {day}
-                          </div>
-                        ))}
+                    {calendarLoading ? (
+                      <div className="text-center py-12 text-[#8F9BB3] text-sm font-medium">Loading attendance records...</div>
+                    ) : dailyRecords && dailyRecords.length === 0 ? (
+                      <div className="text-center py-12 text-[#8F9BB3] text-sm font-medium bg-[#F4F6FA] rounded-lg border border-[#EEF0F6] border-dashed">
+                        No data present for this month.
                       </div>
-                      
-                      {/* Calendar Grid */}
-                      <div className="grid grid-cols-7">
-                        {calendarCells.map((cell, idx) => {
-                          const isToday = cell.date === today.getDate();
-                          return (
-                            <div key={idx} className={`min-h-[80px] p-2 border-b border-r border-[#EEF0F6] relative ${isToday ? 'bg-[#EEF2FF]' : ''}`}>
-                              {cell.date && (
-                                <>
-                                  <span className={`absolute top-2 right-2 text-xs font-semibold ${isToday ? 'text-[#4361EE]' : 'text-[#8F9BB3]'}`}>
-                                    {cell.date}
-                                  </span>
-                                  {cell.content && (
-                                    <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
-                                      <div className={`w-0.5 h-3.5 rounded-full ${
-                                        cell.type === 'late' ? 'bg-orange-400' :
-                                        cell.type === 'leave' ? 'bg-red-400' : 'bg-[#4361EE]'
-                                      }`} />
-                                      <span className={`text-[10px] font-bold ${
-                                        cell.type === 'late' ? 'text-orange-600' :
-                                        cell.type === 'leave' ? 'text-red-500' : 'text-[#1B2559]'
-                                      }`}>
-                                        {cell.content}
-                                      </span>
-                                    </div>
-                                  )}
-                                </>
-                              )}
+                    ) : (
+                      <div className="border border-[#EEF0F6] rounded-lg overflow-hidden">
+                        {/* Days header */}
+                        <div className="grid grid-cols-7 bg-[#F4F6FA] border-b border-[#EEF0F6]">
+                          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                            <div key={day} className="py-2 text-center text-[10px] font-bold text-[#8F9BB3] uppercase tracking-wider border-r border-[#EEF0F6] last:border-r-0">
+                              {day}
                             </div>
-                          );
-                        })}
+                          ))}
+                        </div>
+
+                        {/* Calendar Grid */}
+                        <div className="grid grid-cols-7">
+                          {calendarCells.map((cell, idx) => {
+                            const isToday = cell.date === new Date().getDate() &&
+                              currentMonthNum === new Date().getMonth() &&
+                              currentYear === new Date().getFullYear();
+
+                            return (
+                              <div key={idx} className={`min-h-[80px] p-2 border-b border-r border-[#EEF0F6] relative ${isToday ? 'bg-[#EEF2FF]' : ''}`}>
+                                {cell.date && (
+                                  <>
+                                    <span className={`absolute top-2 right-2 text-xs font-semibold ${isToday ? 'text-[#4361EE]' : 'text-[#8F9BB3]'}`}>
+                                      {cell.date}
+                                    </span>
+                                    {cell.record && (
+                                      <div className="absolute bottom-2 left-2 flex flex-col items-start gap-1">
+                                        <div className="flex items-center gap-1.5">
+                                          <div className={`w-0.5 h-3.5 rounded-full ${(cell.record.late_flag === 'YES' || cell.record.late_flag === 'LC') ? 'bg-orange-400' : 'bg-[#4361EE]'
+                                            }`} />
+                                          <span className={`text-[10px] font-bold ${(cell.record.late_flag === 'YES' || cell.record.late_flag === 'LC') ? 'text-orange-600' : 'text-[#1B2559]'
+                                            }`}>
+                                            {(cell.record.late_flag === 'YES' || cell.record.late_flag === 'LC') ? 'Late' : 'On Time'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               )}

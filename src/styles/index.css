@@ -1,3 +1,35 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+.dark .bg-\[\#F0F2F8\] { background-color: #111111; }
+.dark .bg-white { background-color: #1a1a1a; color: #ebebeb; }
+.dark .text-\[\#1B2559\] { color: #f0f0f0; }
+.dark .text-\[\#8F9BB3\] { color: #888888; }
+.dark .border-\[\#EEF0F6\] { border-color: #2a2a2a; }
+.dark .bg-\[\#EEF2FF\] { background-color: #2a2a2a; }
+.dark .bg-\[\#F4F6FA\] { background-color: #111111; }
+.dark .hover\:bg-\[\#F9FAFB\]:hover { background-color: #2a2a2a; }
+.dark .bg-\[\#FAFBFF\] { background-color: #1a1a1a; }
+
+/* Dropdowns & inputs in dark mode */
+.dark select { background-color: #1a1a1a; color: #d0d0d0; border-color: #2a2a2a; }
+.dark select option { background-color: #1a1a1a; color: #d0d0d0; }
+.dark input[type="month"] { background-color: #1a1a1a; color: #d0d0d0; border-color: #2a2a2a; color-scheme: dark; }
+.dark input[type="text"],.dark input[type="search"] { background-color: transparent; color: #d0d0d0; }
+
+/* Muted action badge colors in dark mode */
+.dark .bg-emerald-50 { background-color: rgba(16,185,129,0.12) !important; }
+.dark .text-emerald-700 { color: #6ee7b7 !important; }
+.dark .hover\:bg-emerald-100:hover { background-color: rgba(16,185,129,0.2) !important; }
+.dark .bg-red-50 { background-color: rgba(239,68,68,0.12) !important; }
+.dark .text-red-600 { color: #fca5a5 !important; }
+.dark .hover\:bg-red-100:hover { background-color: rgba(239,68,68,0.2) !important; }
+.dark .bg-purple-50 { background-color: rgba(139,92,246,0.12) !important; }
+.dark .text-purple-600 { color: #c4b5fd !important; }
+.dark .bg-yellow-50 { background-color: rgba(234,179,8,0.12) !important; }
+.dark .text-yellow-700 { color: #fde68a !important; }
+.dark .bg-orange-50 { background-color: rgba(249,115,22,0.12) !important; }
+.dark .text-orange-600 { color: #fdba74 !important; }
+.dark .text-red-500 { color: #fca5a5 !important; }
+.dark .bg-\[\#EEF0F6\] { background-color: #2a2a2a; }
