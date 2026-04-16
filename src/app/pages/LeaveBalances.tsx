@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { Search, RefreshCw } from 'lucide-react';
 import { supabase, type LeaveBalance } from '../../lib/supabase';
+import { useAuth } from '../App';
 
 function LeaveBar({ taken, left, color }: { taken: number; left: number; color: string }) {
   const total = taken + left;
@@ -17,17 +18,27 @@ function LeaveBar({ taken, left, color }: { taken: number; left: number; color: 
 }
 
 export function LeaveBalances() {
+  const { session } = useAuth();
   const [leaves, setLeaves] = useState<LeaveBalance[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('leave_balances').select('*');
-    if (error) console.error(error);
-    else setLeaves(data || []);
+    setFetchError(null);
+    const { data, error } = await supabase
+      .from('leave_balances')
+      .select('*')
+      .order('employee_name', { ascending: true });
+    if (error) {
+      console.error('Leave fetch error:', error);
+      setFetchError(error.message);
+    } else {
+      setLeaves(data || []);
+    }
     setLoading(false);
   };
 
@@ -97,6 +108,10 @@ export function LeaveBalances() {
 
         {loading ? (
           <div className="py-12 text-center text-sm text-[#8F9BB3]">Loading leave data...</div>
+        ) : fetchError ? (
+          <div className="py-12 text-center text-sm text-red-400">
+            Error: {fetchError}
+          </div>
         ) : filtered.length === 0 ? (
           <div className="py-12 text-center text-sm text-[#8F9BB3]">No records found.</div>
         ) : (
