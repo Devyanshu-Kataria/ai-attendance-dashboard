@@ -8,7 +8,7 @@ import { type LeaveBalance } from '../../lib/supabase';
 
 export function EmployeeDashboard() {
   const { session, userEmployeeId, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'info' | 'appeal' | 'leaves'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'appeal' | 'calendar'>('info');
   const [leaveData, setLeaveData] = useState<LeaveBalance | null>(null);
   const [employeeData, setEmployeeData] = useState<StrikeEmployee | null>(null);
   const [loading, setLoading] = useState(true);
@@ -17,11 +17,13 @@ export function EmployeeDashboard() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-  if (userEmployeeId) {
-    fetchEmployeeData();
-    fetchLeaveData();
-  }
-}, [userEmployeeId]);
+    if (userEmployeeId) {
+      fetchEmployeeData();
+      fetchLeaveData();
+    } else {
+      setLoading(false);
+    }
+  }, [userEmployeeId]);
 
   const fetchLeaveData = async () => {
   const { data } = await supabase
@@ -99,6 +101,30 @@ export function EmployeeDashboard() {
     : employeeData?.excused === 'REJECTED' ? 'text-red-500'
     : 'text-[#1B2559]';
 
+  // --- Calendar Dummy Data Generator ---
+  const today = new Date();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
+
+  const calendarCells = [];
+  for (let i = 0; i < firstDayOfMonth; i++) calendarCells.push({ date: null, content: null, type: 'normal' });
+  
+  for (let d = 1; d <= daysInMonth; d++) {
+    let content = null;
+    let type = 'normal'; // normal, late, leave
+    const isWeekend = [0, 6].includes(new Date(currentYear, currentMonth, d).getDay());
+    
+    if (d === 10 || d === 15) { content = 'Late'; type = 'late'; }
+    else if (d === 20) { content = 'CL'; type = 'leave'; }
+    else if (d < today.getDate() && !isWeekend) { content = 'On Time'; type = 'normal'; }
+    
+    calendarCells.push({ date: d, content, type });
+  }
+  // Fill remaining cells to complete the grid (multiple of 7)
+  while (calendarCells.length % 7 !== 0) calendarCells.push({ date: null, content: null, type: 'normal' });
+
   return (
     <div className="min-h-screen bg-[#F0F2F8] flex flex-col">
       {/* Top bar */}
@@ -150,14 +176,14 @@ export function EmployeeDashboard() {
               <FileText size={13} /> Appeal for Excuse
             </button>
             <button
-              onClick={() => setActiveTab('leaves')}
+              onClick={() => setActiveTab('calendar')}
               className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
-                activeTab === 'leaves'
+                activeTab === 'calendar'
                   ? 'border-[#4361EE] text-[#4361EE]'
                   : 'border-transparent text-[#8F9BB3] hover:text-[#1B2559]'
               }`}
             >
-              <CalendarDays size={13} /> My Leaves
+              <CalendarDays size={13} /> Attendance Calendar
             </button>
           </div>
 
@@ -281,36 +307,86 @@ export function EmployeeDashboard() {
                   )}
                 </div>
               )}
-              {activeTab === 'leaves' && (
-                <div className="space-y-4">
+              {activeTab === 'calendar' && (
+                <div className="space-y-6">
                   {!leaveData ? (
                     <div className="bg-white rounded-xl border border-[#EEF0F6] p-12 text-center text-sm text-[#8F9BB3]">
                       No leave record found. Contact HR.
                     </div>
                   ) : (
-                    <>
-                      <div className="grid grid-cols-3 gap-4">
-                        {[
-                          { label: 'Sick Leave', taken: leaveData.sl_taken, left: leaveData.sl_left, color: 'bg-red-400', textColor: 'text-red-500' },
-                          { label: 'Casual Leave', taken: leaveData.cl_taken, left: leaveData.cl_left, color: 'bg-[#4361EE]', textColor: 'text-[#4361EE]' },
-                          { label: 'Earned Leave', taken: leaveData.el_taken, left: leaveData.el_left, color: 'bg-emerald-500', textColor: 'text-emerald-600' },
-                        ].map((card) => (
-                          <div key={card.label} className="bg-white rounded-xl border border-[#EEF0F6] p-4 shadow-sm text-center">
-                            <p className="text-[10px] font-semibold text-[#8F9BB3] uppercase tracking-wider mb-2">{card.label}</p>
-                            <p className={`text-3xl font-bold ${card.textColor} mb-0.5`}>{card.left}</p>
-                            <p className="text-[11px] text-[#8F9BB3]">remaining</p>
-                            <div className="mt-3 h-1.5 bg-[#EEF0F6] rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${card.color}`}
-                                style={{ width: `${Math.round((card.taken / (card.taken + card.left || 1)) * 100)}%` }}
-                              />
-                            </div>
-                            <p className="text-[10px] text-[#8F9BB3] mt-1">{card.taken} used of {card.taken + card.left}</p>
+                    <div className="grid grid-cols-3 gap-4">
+                      {[
+                        { label: 'Sick Leave', taken: leaveData.sl_taken, left: leaveData.sl_left, color: 'bg-red-400', textColor: 'text-red-500' },
+                        { label: 'Casual Leave', taken: leaveData.cl_taken, left: leaveData.cl_left, color: 'bg-[#4361EE]', textColor: 'text-[#4361EE]' },
+                        { label: 'Earned Leave', taken: leaveData.el_taken, left: leaveData.el_left, color: 'bg-emerald-500', textColor: 'text-emerald-600' },
+                      ].map((card) => (
+                        <div key={card.label} className="bg-white rounded-xl border border-[#EEF0F6] p-4 shadow-sm text-center">
+                          <p className="text-[10px] font-semibold text-[#8F9BB3] uppercase tracking-wider mb-2">{card.label}</p>
+                          <p className={`text-3xl font-bold ${card.textColor} mb-0.5`}>{card.left}</p>
+                          <p className="text-[11px] text-[#8F9BB3]">remaining</p>
+                          <div className="mt-3 h-1.5 bg-[#EEF0F6] rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${card.color}`}
+                              style={{ width: `${Math.round((card.taken / ((card.taken + card.left) || 1)) * 100)}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] text-[#8F9BB3] mt-1">{card.taken} used of {card.taken + card.left}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Calendar View */}
+                  <div className="bg-white rounded-xl border border-[#EEF0F6] p-6 shadow-sm">
+                    <div className="flex justify-between items-center mb-6">
+                      <h2 className="text-sm font-bold text-[#1B2559]">
+                        Attendance Calendar - {today.toLocaleString('default', { month: 'short', year: 'numeric' })}
+                      </h2>
+                    </div>
+
+                    <div className="border border-[#EEF0F6] rounded-lg overflow-hidden">
+                      {/* Days header */}
+                      <div className="grid grid-cols-7 bg-[#F4F6FA] border-b border-[#EEF0F6]">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                          <div key={day} className="py-2 text-center text-[10px] font-bold text-[#8F9BB3] uppercase tracking-wider border-r border-[#EEF0F6] last:border-r-0">
+                            {day}
                           </div>
                         ))}
                       </div>
-                    </>
-                  )}
+                      
+                      {/* Calendar Grid */}
+                      <div className="grid grid-cols-7">
+                        {calendarCells.map((cell, idx) => {
+                          const isToday = cell.date === today.getDate();
+                          return (
+                            <div key={idx} className={`min-h-[80px] p-2 border-b border-r border-[#EEF0F6] relative ${isToday ? 'bg-[#EEF2FF]' : ''}`}>
+                              {cell.date && (
+                                <>
+                                  <span className={`absolute top-2 right-2 text-xs font-semibold ${isToday ? 'text-[#4361EE]' : 'text-[#8F9BB3]'}`}>
+                                    {cell.date}
+                                  </span>
+                                  {cell.content && (
+                                    <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
+                                      <div className={`w-0.5 h-3.5 rounded-full ${
+                                        cell.type === 'late' ? 'bg-orange-400' :
+                                        cell.type === 'leave' ? 'bg-red-400' : 'bg-[#4361EE]'
+                                      }`} />
+                                      <span className={`text-[10px] font-bold ${
+                                        cell.type === 'late' ? 'text-orange-600' :
+                                        cell.type === 'leave' ? 'text-red-500' : 'text-[#1B2559]'
+                                      }`}>
+                                        {cell.content}
+                                      </span>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </>
