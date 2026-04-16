@@ -8,7 +8,7 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
   { icon: Users, label: 'Attendance', path: '/attendance' },
   { icon: UserCircle, label: 'Employees', path: '/profile/D00433' },
-  { icon: CalendarDays, label: 'Calendar', path: '#' },
+  { icon: CalendarDays, label: 'Leave Balances', path: '/leaves' },
   { icon: LayoutGrid, label: 'Reports', path: '#' },
 ];
 

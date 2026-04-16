@@ -57,18 +57,25 @@ export default function App() {
 
   const fetchUserRole = async () => {
     setRoleLoading(true);
+    const userEmail = session!.user.email ?? '';
+
+    // Fetch role & employee_id associated with this email
     const { data, error } = await supabase
       .from('user_roles')
       .select('role, employee_id')
-      .eq('email', session!.user.email)
-      .single();
+      .eq('email', userEmail)
+      .maybeSingle();
 
     if (error) {
       console.error('Role fetch error:', error);
       setUserRole('employee');
-    } else {
+    } else if (data) {
       setUserRole(data.role as UserRole);
       setUserEmployeeId(data.employee_id);
+    } else {
+      // Fallback: if no row found (e.g. newly created account race), default to employee
+      console.warn('No user_roles row found for', userEmail);
+      setUserRole('employee');
     }
     setRoleLoading(false);
   };

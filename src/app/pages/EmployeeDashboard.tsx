@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import {
-  Clock, ShieldAlert, User, LogOut, FileText, Send, LayoutGrid,
+  Clock, ShieldAlert, User, LogOut, FileText, Send, LayoutGrid, CalendarDays
 } from 'lucide-react';
 import { supabase, type StrikeEmployee } from '../../lib/supabase';
 import { useAuth } from '../App';
+import { type LeaveBalance } from '../../lib/supabase';
 
 export function EmployeeDashboard() {
   const { session, userEmployeeId, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'info' | 'appeal'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'appeal' | 'leaves'>('info');
+  const [leaveData, setLeaveData] = useState<LeaveBalance | null>(null);
   const [employeeData, setEmployeeData] = useState<StrikeEmployee | null>(null);
   const [loading, setLoading] = useState(true);
   const [appealText, setAppealText] = useState('');
@@ -15,8 +17,20 @@ export function EmployeeDashboard() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (userEmployeeId) fetchEmployeeData();
-  }, [userEmployeeId]);
+  if (userEmployeeId) {
+    fetchEmployeeData();
+    fetchLeaveData();
+  }
+}, [userEmployeeId]);
+
+  const fetchLeaveData = async () => {
+  const { data } = await supabase
+    .from('leave_balances')
+    .select('*')
+    .eq('employee_id', userEmployeeId)
+    .single();
+  if (data) setLeaveData(data);
+  };
 
   const fetchEmployeeData = async () => {
     setLoading(true);
@@ -134,6 +148,16 @@ export function EmployeeDashboard() {
               }`}
             >
               <FileText size={13} /> Appeal for Excuse
+            </button>
+            <button
+              onClick={() => setActiveTab('leaves')}
+              className={`flex items-center gap-1.5 px-4 py-3 text-xs font-medium border-b-2 transition-colors ${
+                activeTab === 'leaves'
+                  ? 'border-[#4361EE] text-[#4361EE]'
+                  : 'border-transparent text-[#8F9BB3] hover:text-[#1B2559]'
+              }`}
+            >
+              <CalendarDays size={13} /> My Leaves
             </button>
           </div>
 
@@ -254,6 +278,38 @@ export function EmployeeDashboard() {
                         {submitting ? 'Submitting...' : 'Submit Appeal'}
                       </button>
                     </form>
+                  )}
+                </div>
+              )}
+              {activeTab === 'leaves' && (
+                <div className="space-y-4">
+                  {!leaveData ? (
+                    <div className="bg-white rounded-xl border border-[#EEF0F6] p-12 text-center text-sm text-[#8F9BB3]">
+                      No leave record found. Contact HR.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-3 gap-4">
+                        {[
+                          { label: 'Sick Leave', taken: leaveData.sl_taken, left: leaveData.sl_left, color: 'bg-red-400', textColor: 'text-red-500' },
+                          { label: 'Casual Leave', taken: leaveData.cl_taken, left: leaveData.cl_left, color: 'bg-[#4361EE]', textColor: 'text-[#4361EE]' },
+                          { label: 'Earned Leave', taken: leaveData.el_taken, left: leaveData.el_left, color: 'bg-emerald-500', textColor: 'text-emerald-600' },
+                        ].map((card) => (
+                          <div key={card.label} className="bg-white rounded-xl border border-[#EEF0F6] p-4 shadow-sm text-center">
+                            <p className="text-[10px] font-semibold text-[#8F9BB3] uppercase tracking-wider mb-2">{card.label}</p>
+                            <p className={`text-3xl font-bold ${card.textColor} mb-0.5`}>{card.left}</p>
+                            <p className="text-[11px] text-[#8F9BB3]">remaining</p>
+                            <div className="mt-3 h-1.5 bg-[#EEF0F6] rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${card.color}`}
+                                style={{ width: `${Math.round((card.taken / (card.taken + card.left || 1)) * 100)}%` }}
+                              />
+                            </div>
+                            <p className="text-[10px] text-[#8F9BB3] mt-1">{card.taken} used of {card.taken + card.left}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )}
                 </div>
               )}

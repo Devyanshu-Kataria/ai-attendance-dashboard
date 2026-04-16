@@ -3,6 +3,7 @@ import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { AttendanceList } from "./pages/AttendanceList";
 import { ProfileDetails } from "./pages/ProfileDetails";
+import { LeaveBalances } from './pages/LeaveBalances';
 
 export const router = createBrowserRouter([
   {
@@ -12,6 +13,7 @@ export const router = createBrowserRouter([
       { index: true, Component: Dashboard },
       { path: "attendance", Component: AttendanceList },
       { path: "profile/:id", Component: ProfileDetails },
+      { path: 'leaves', Component: LeaveBalances },
     ],
   },
 ]);
