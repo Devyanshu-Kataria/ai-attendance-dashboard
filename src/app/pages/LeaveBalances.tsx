@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { Search, RefreshCw } from 'lucide-react';
 import { supabase, type LeaveBalance } from '../../lib/supabase';
 import { useAuth } from '../App';
+import { MonthPicker } from '../components/MonthPicker';
 
 function LeaveBar({ taken, left, color }: { taken: number; left: number; color: string }) {
   const total = taken + left;
@@ -24,7 +25,18 @@ export function LeaveBalances() {
   const [searchQuery, setSearchQuery] = useState('');
   const [fetchError, setFetchError] = useState<string | null>(null);
 
-  useEffect(() => { fetchData(); }, []);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  useEffect(() => { fetchData(); }, [selectedMonth]);
+
+  const getMonthYearStr = (yyyyMm: string) => {
+    const [yr, mo] = yyyyMm.split('-');
+    const date = new Date(parseInt(yr), parseInt(mo) - 1);
+    return `${date.toLocaleString('en-US', { month: 'long' })} ${yr}`;
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -32,6 +44,7 @@ export function LeaveBalances() {
     const { data, error } = await supabase
       .from('leave_balances')
       .select('*')
+      .eq('month_year', getMonthYearStr(selectedMonth))
       .order('employee_name', { ascending: true });
     if (error) {
       console.error('Leave fetch error:', error);
@@ -62,6 +75,8 @@ export function LeaveBalances() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-base font-semibold text-[#1B2559]">Leave Balances</h1>
         <div className="flex items-center gap-3">
+          <MonthPicker value={selectedMonth} onChange={setSelectedMonth} align="left" />
+
           <div className="flex items-center gap-2 bg-white border border-[#EEF0F6] rounded-lg px-3 py-1.5 shadow-sm">
             <input
               placeholder="Search by name or ID"
@@ -100,8 +115,8 @@ export function LeaveBalances() {
 
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border border-[#EEF0F6] overflow-hidden">
-        <div className="grid grid-cols-[2fr_1fr_repeat(6,1fr)] gap-3 px-5 py-3 border-b border-[#EEF0F6] bg-[#FAFBFF]">
-          {['Employee', 'ID', 'SL Taken', 'CL Taken', 'EL Taken', 'SL Left', 'CL Left', 'EL Left'].map((h) => (
+        <div className="grid grid-cols-[2fr_1fr_1fr_repeat(9,1fr)] gap-3 px-5 py-3 border-b border-[#EEF0F6] bg-[#FAFBFF]">
+          {['Employee', 'ID', 'Dept', 'Present', 'Absent', 'Late', 'SL', 'CL', 'EL', 'SL Left', 'CL Left', 'EL Left'].map((h) => (
             <span key={h} className="text-[11px] font-semibold text-[#8F9BB3] uppercase tracking-wide">{h}</span>
           ))}
         </div>
@@ -118,7 +133,7 @@ export function LeaveBalances() {
           filtered.map((emp, i) => (
             <div
               key={emp.employee_id}
-              className={`grid grid-cols-[2fr_1fr_repeat(6,1fr)] gap-3 px-5 py-3 items-center hover:bg-[#F9FAFB] transition-colors ${
+              className={`grid grid-cols-[2fr_1fr_1fr_repeat(9,1fr)] gap-3 px-5 py-3 items-center hover:bg-[#F9FAFB] transition-colors ${
                 i < filtered.length - 1 ? 'border-b border-[#EEF0F6]' : ''
               }`}
             >
@@ -129,35 +144,24 @@ export function LeaveBalances() {
                     {emp.employee_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
                   </span>
                 </div>
-                <span className="text-xs font-semibold text-[#1B2559] truncate">{emp.employee_name}</span>
+                <div className="min-w-0">
+                  <span className="text-xs font-semibold text-[#1B2559] truncate block">{emp.employee_name}</span>
+                  <span className="text-[10px] text-[#8F9BB3] truncate block">{emp.designation}</span>
+                </div>
               </div>
-
-              {/* ID */}
               <span className="text-xs text-[#8F9BB3]">{emp.employee_id}</span>
-
-              {/* SL Taken */}
-              <span className="text-xs font-medium text-red-500">{emp.sl_taken}</span>
-
-              {/* CL Taken */}
+              <span className="text-xs text-[#1B2559]">{emp.department}</span>
+              {/* Accurate counts */}
+              <span className="text-xs font-medium text-emerald-500">{emp.present_days}</span>
+              <span className={`text-xs font-medium ${emp.absent_days > 5 ? 'text-red-500' : 'text-[#1B2559]'}`}>{emp.absent_days}</span>
+              <span className="text-xs font-medium text-yellow-500">{emp.lc_days}</span>
+              {/* Leave breakdown */}
+              <span className="text-xs font-medium text-red-400">{emp.sl_taken}</span>
               <span className="text-xs font-medium text-[#4361EE]">{emp.cl_taken}</span>
-
-              {/* EL Taken */}
-              <span className="text-xs font-medium text-emerald-600">{emp.el_taken}</span>
-
-              {/* SL Left */}
-              <span className={`text-xs font-medium ${emp.sl_left === 0 ? 'text-red-400' : 'text-[#1B2559]'}`}>
-                {emp.sl_left}
-              </span>
-
-              {/* CL Left */}
-              <span className={`text-xs font-medium ${emp.cl_left === 0 ? 'text-red-400' : 'text-[#1B2559]'}`}>
-                {emp.cl_left}
-              </span>
-
-              {/* EL Left */}
-              <span className={`text-xs font-medium ${emp.el_left === 0 ? 'text-red-400' : 'text-[#1B2559]'}`}>
-                {emp.el_left}
-              </span>
+              <span className="text-xs font-medium text-emerald-500">{emp.el_taken}</span>
+              <span className={`text-xs font-medium ${emp.sl_left === 0 ? 'text-red-400' : 'text-[#1B2559]'}`}>{emp.sl_left}</span>
+              <span className={`text-xs font-medium ${emp.cl_left === 0 ? 'text-red-400' : 'text-[#1B2559]'}`}>{emp.cl_left}</span>
+              <span className={`text-xs font-medium ${emp.el_left === 0 ? 'text-red-400' : 'text-[#1B2559]'}`}>{emp.el_left}</span>
             </div>
           ))
         )}

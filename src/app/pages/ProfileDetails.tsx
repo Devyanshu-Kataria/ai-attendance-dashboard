@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { Search } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { MonthPicker } from "../components/MonthPicker";
 
 const PIE_COLORS = ["#4361EE", "#EEF2FF"];
 const DAYS_OF_WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -222,12 +223,7 @@ export function ProfileDetails() {
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-[#1B2559]">Attendance Breakdown</h3>
               <div className="flex items-center gap-2">
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="text-[11px] font-semibold text-[#8F9BB3] bg-[#F4F6FA] border border-[#EEF0F6] rounded-lg px-2 py-1 outline-none focus:border-[#4361EE] cursor-pointer"
-                />
+                <MonthPicker value={selectedMonth} onChange={setSelectedMonth} align="right" />
               </div>
             </div>
             <div className="flex items-center gap-8">
@@ -297,12 +293,7 @@ export function ProfileDetails() {
                 Attendance Calendar — {monthLabel}
               </h3>
               <div className="flex items-center gap-2">
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="text-[11px] font-semibold text-[#8F9BB3] bg-[#F4F6FA] border border-[#EEF0F6] rounded-lg px-2 py-1 outline-none focus:border-[#4361EE] cursor-pointer"
-                />
+                <MonthPicker value={selectedMonth} onChange={setSelectedMonth} align="right" />
               </div>
             </div>
             {loadingRecords ? (
@@ -316,23 +307,57 @@ export function ProfileDetails() {
                 </div>
                 {calendarWeeks.map((week, wi) => (
                   <div key={wi} className="grid grid-cols-7 border-t border-[#EEF0F6]">
-                    {week.map((cell, ci) => (
-                      <div
-                        key={ci}
-                        className="relative min-h-[44px] px-1 pt-1 pb-1 border-l first:border-l-0 border-[#EEF0F6]"
-                      >
-                        {cell.day !== null && (
-                          <>
-                            <span className="text-[10px] font-semibold text-[#8F9BB3] block mb-0.5">{cell.day}</span>
-                            {cell.record && (
-                              <div className={`text-[9px] font-medium px-1 py-0.5 rounded text-center ${getCellStyle(cell.record)}`}>
-                                {getCellLabel(cell.record)}
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    ))}
+                    {week.map((cell, ci) => {
+                      const [y, m]    = selectedMonth.split('-').map(Number);
+                      const cellObj   = cell.day ? new Date(y, m - 1, cell.day) : null;
+                      const isSunday  = cellObj ? cellObj.getDay() === 0 : false;
+                      const isPast    = cellObj ? cellObj <= new Date() : false;
+                      // Absent = no record OR record with null late_flag
+                      const showAbsent = cell.day !== null
+                        && (!cell.record || !cell.record.late_flag)
+                        && !isSunday
+                        && isPast;
+
+                      return (
+                        <div
+                          key={ci}
+                          className="relative min-h-[44px] px-1 pt-1 pb-1 border-l first:border-l-0 border-[#EEF0F6]"
+                        >
+                          {cell.day !== null && (
+                            <>
+                              <span className="text-[10px] font-semibold text-[#8F9BB3] block mb-0.5">{cell.day}</span>
+                              {cell.record?.late_flag && cell.record.late_flag !== 'OFF' ? (
+                                <div className={`text-[9px] font-medium px-1 py-0.5 rounded text-center ${getCellStyle(cell.record)}`}>
+                                  {getCellLabel(cell.record)}
+                                </div>
+                              ) : showAbsent ? (
+                                <div className="relative group">
+                                  <div className="text-[9px] font-medium px-1 py-0.5 rounded text-center bg-gray-50 text-gray-500 border border-gray-100 italic transition-colors group-hover:bg-gray-100">
+                                    Absent
+                                  </div>
+                                  {leaveBalance && (
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-20
+                                                    opacity-0 group-hover:opacity-100 pointer-events-none
+                                                    transition-opacity duration-150
+                                                    bg-[#1B2559] text-white rounded-lg px-2.5 py-2
+                                                    shadow-xl whitespace-nowrap text-[8px] leading-4">
+                                      <p className="font-bold mb-0.5 text-[9px]">Month's Leave Taken</p>
+                                      {leaveBalance.sl_taken > 0 && <p>🔴 Sick Leave: <span className="font-semibold">{leaveBalance.sl_taken}d</span></p>}
+                                      {leaveBalance.cl_taken > 0 && <p>🔵 Casual Leave: <span className="font-semibold">{leaveBalance.cl_taken}d</span></p>}
+                                      {leaveBalance.el_taken > 0 && <p>🟢 Earned Leave: <span className="font-semibold">{leaveBalance.el_taken}d</span></p>}
+                                      {leaveBalance.sl_taken === 0 && leaveBalance.cl_taken === 0 && leaveBalance.el_taken === 0 && (
+                                        <p className="text-gray-300">No leaves recorded this month</p>
+                                      )}
+                                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#1B2559]" />
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 ))}
               </div>
@@ -342,10 +367,11 @@ export function ProfileDetails() {
             <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-[#EEF0F6]">
               {[
                 { label: 'On Time', cls: 'bg-[#EEF2FF] text-[#4361EE]' },
-                { label: 'Late', cls: 'bg-orange-50 text-orange-500' },
-                { label: 'CL', cls: 'bg-blue-50 text-blue-500' },
-                { label: 'SL', cls: 'bg-red-50 text-red-400' },
-                { label: 'EL', cls: 'bg-emerald-50 text-emerald-600' },
+                { label: 'Late',    cls: 'bg-orange-50 text-orange-500' },
+                { label: 'CL',      cls: 'bg-blue-50 text-blue-500' },
+                { label: 'SL',      cls: 'bg-red-50 text-red-400' },
+                { label: 'EL',      cls: 'bg-emerald-50 text-emerald-600' },
+                { label: 'Absent',  cls: 'bg-gray-100 text-gray-400' },
               ].map(l => (
                 <span key={l.label} className={`text-[9px] font-semibold px-2 py-0.5 rounded ${l.cls}`}>{l.label}</span>
               ))}

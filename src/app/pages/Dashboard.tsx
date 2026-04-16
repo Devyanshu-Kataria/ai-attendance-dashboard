@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { DEPARTMENTS } from '../data/employees';
 import { supabase, type StrikeEmployee } from '../../lib/supabase';
+import { MonthPicker } from '../components/MonthPicker';
 import { useAuth } from '../App';
 
 // Chart data loaded dynamically
@@ -73,8 +74,6 @@ export function Dashboard() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -109,8 +108,8 @@ export function Dashboard() {
     }
   };
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     const [empRes, leaveRes] = await Promise.all([
       supabase.from('strike_counter').select('*'),
       supabase.from('leave_balances').select('*'),
@@ -250,12 +249,7 @@ export function Dashboard() {
                 Attendance Status
               </h2>
               <div className="flex items-center gap-2">
-                <input 
-                  type="month" 
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="text-xs text-[#8F9BB3] font-semibold border border-[#EEF0F6] bg-[#F4F6FA] rounded-lg px-2 py-1 outline-none focus:border-[#4361EE] focus:ring-1 focus:ring-[#4361EE] transition-colors cursor-pointer" 
-                />
+                <MonthPicker value={selectedMonth} onChange={setSelectedMonth} />
               </div>
             </div>
             <div className="flex items-center gap-4 mb-3">

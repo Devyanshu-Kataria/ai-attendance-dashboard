@@ -22,6 +22,16 @@ export interface StrikeEmployee {
 export interface LeaveBalance {
   employee_id: string;
   employee_name: string;
+  department: string;
+  designation: string;
+  month_year: string;
+
+  // Raw accurate counts from Excel
+  present_days: number;
+  absent_days: number;
+  lc_days: number;
+
+  // Leave breakdown (sl + cl + el = absent_days)
   sl_taken: number;
   cl_taken: number;
   el_taken: number;
