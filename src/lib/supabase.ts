@@ -10,6 +10,7 @@ export type UserRole = 'admin' | 'employee';
 export interface StrikeEmployee {
   employee_id: string;
   name: string;
+  department?: string;
   monthly_late_count: number;
   strike_level: number;
   last_warning_date: string;
