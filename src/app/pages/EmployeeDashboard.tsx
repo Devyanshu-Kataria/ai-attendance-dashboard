@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Clock, ShieldAlert, User, LogOut, FileText, Send, LayoutGrid, CalendarDays
+  Clock, ShieldAlert, User, LogOut, FileText, Send, LayoutGrid, CalendarDays, Moon, Sun
 } from 'lucide-react';
 import { supabase, type StrikeEmployee } from '../../lib/supabase';
 import { useAuth } from '../App';
@@ -36,6 +36,24 @@ export function EmployeeDashboard() {
   const [appealText, setAppealText] = useState('');
   const [appealStatus, setAppealStatus] = useState<'success' | 'error' | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    if (document.documentElement.classList.contains('dark')) {
+      setIsDark(true);
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    if (isDark) {
+      document.documentElement.classList.remove('dark');
+      setIsDark(false);
+    } else {
+      document.documentElement.classList.add('dark');
+      setIsDark(true);
+    }
+  };
 
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const d = new Date();
@@ -98,7 +116,7 @@ export function EmployeeDashboard() {
     setSubmitting(true);
 
     try {
-      await fetch('http://192.168.1.2:5678/webhook/excuse-appeal', {
+      await fetch('http://localhost:5678/webhook/excuse-appeal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -178,13 +196,24 @@ export function EmployeeDashboard() {
           <span className="text-xs font-semibold text-[#1B2559]">Growify Digital LLP</span>
           <span className="text-[11px] text-[#8F9BB3] ml-2">• Employee Portal</span>
         </div>
-        <span className="text-xs text-[#8F9BB3] hidden sm:block">{session?.user.email}</span>
-        <button
-          onClick={signOut}
-          className="flex items-center gap-1.5 text-xs text-[#8F9BB3] hover:text-[#4361EE] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#EEF2FF]"
-        >
-          <LogOut size={14} /> Sign Out
-        </button>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleDarkMode}
+            className="w-8 h-8 rounded-full bg-[#F4F6FA] flex items-center justify-center transition-colors hover:bg-[#EEF2FF] dark:bg-[#1E293B] dark:hover:bg-[#334155]"
+          >
+            {isDark ? <Sun size={14} className="text-[#4361EE] dark:text-[#E2E8F0]" /> : <Moon size={14} className="text-[#4361EE]" />}
+          </button>
+
+          <span className="text-xs text-[#8F9BB3] hidden sm:block border-l border-[#EEF0F6] pl-3">{session?.user.email}</span>
+
+          <button
+            onClick={signOut}
+            className="flex items-center gap-1.5 text-xs text-[#8F9BB3] hover:text-[#4361EE] transition-colors px-3 py-1.5 rounded-lg hover:bg-[#EEF2FF]"
+          >
+            <LogOut size={14} /> Sign Out
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 p-4 md:p-8">
@@ -407,7 +436,7 @@ export function EmployeeDashboard() {
                             const cellDateObj = cell.date
                               ? new Date(currentYear, currentMonthNum, cell.date)
                               : null;
-                            const isSunday      = cellDateObj ? cellDateObj.getDay() === 0 : false;
+                            const isSunday = cellDateObj ? cellDateObj.getDay() === 0 : false;
                             const isPastOrToday = cellDateObj ? cellDateObj <= now : false;
                             // Absent = no record OR record with null late_flag (leave not recorded in daily_records)
                             const showAbsent = cell.date !== null
@@ -438,9 +467,9 @@ export function EmployeeDashboard() {
                                                           bg-[#1B2559] text-white rounded-lg px-2.5 py-2
                                                           shadow-xl whitespace-nowrap text-[8px] leading-4">
                                             <p className="font-bold mb-0.5 text-[9px]">Month's Leave Taken</p>
-                                            {leaveData.sl_taken > 0  && <p>🔴 Sick Leave: <span className="font-semibold">{leaveData.sl_taken}d</span></p>}
-                                            {leaveData.cl_taken > 0  && <p>🔵 Casual Leave: <span className="font-semibold">{leaveData.cl_taken}d</span></p>}
-                                            {leaveData.el_taken > 0  && <p>🟢 Earned Leave: <span className="font-semibold">{leaveData.el_taken}d</span></p>}
+                                            {leaveData.sl_taken > 0 && <p>🔴 Sick Leave: <span className="font-semibold">{leaveData.sl_taken}d</span></p>}
+                                            {leaveData.cl_taken > 0 && <p>🔵 Casual Leave: <span className="font-semibold">{leaveData.cl_taken}d</span></p>}
+                                            {leaveData.el_taken > 0 && <p>🟢 Earned Leave: <span className="font-semibold">{leaveData.el_taken}d</span></p>}
                                             {leaveData.sl_taken === 0 && leaveData.cl_taken === 0 && leaveData.el_taken === 0 && (
                                               <p className="text-gray-300">No leaves recorded this month</p>
                                             )}
@@ -460,11 +489,11 @@ export function EmployeeDashboard() {
                         <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-[#EEF0F6]">
                           {[
                             { label: 'On Time', cls: 'bg-[#EEF2FF] text-[#4361EE]' },
-                            { label: 'Late',    cls: 'bg-orange-50 text-orange-500' },
-                            { label: 'CL',      cls: 'bg-blue-50 text-blue-500' },
-                            { label: 'SL',      cls: 'bg-red-50 text-red-400' },
-                            { label: 'EL',      cls: 'bg-emerald-50 text-emerald-600' },
-                            { label: 'Absent',  cls: 'bg-gray-100 text-gray-400' },
+                            { label: 'Late', cls: 'bg-orange-50 text-orange-500' },
+                            { label: 'CL', cls: 'bg-blue-50 text-blue-500' },
+                            { label: 'SL', cls: 'bg-red-50 text-red-400' },
+                            { label: 'EL', cls: 'bg-emerald-50 text-emerald-600' },
+                            { label: 'Absent', cls: 'bg-gray-100 text-gray-400' },
                           ].map(l => (
                             <span key={l.label} className={`text-[9px] font-semibold px-2 py-0.5 rounded ${l.cls}`}>{l.label}</span>
                           ))}

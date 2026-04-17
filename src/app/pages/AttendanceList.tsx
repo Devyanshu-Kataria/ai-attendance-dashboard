@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
-import { Search, ChevronDown, ChevronRight, ChevronLeft, Check, X, RefreshCw, Download } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ChevronLeft, Check, X, RefreshCw, Download, Undo2 } from 'lucide-react';
 import { supabase, type StrikeEmployee } from '../../lib/supabase';
 import { useAuth } from '../App';
 
@@ -34,9 +34,9 @@ export function AttendanceList() {
     setLoading(false);
   };
 
-  const handleExcuseAction = async (employeeId: string, action: 'APPROVED' | 'REJECTED') => {
+  const handleExcuseAction = async (employeeId: string, action: 'APPROVED' | 'REJECTED' | 'PENDING') => {
     try {
-      await fetch('http://localhost:5678/webhook/hr-override', {
+      const response = await fetch('http://localhost:5678/webhook/hr-override', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -45,11 +45,16 @@ export function AttendanceList() {
           hrManager: session?.user?.email || 'Unknown HR',
         }),
       });
+
+      if (!response.ok) {
+        throw new Error('Server returned an error');
+      }
+
       setEmployees((prev) =>
         prev.map((emp) => emp.employee_id === employeeId ? { ...emp, excused: action } : emp)
       );
     } catch {
-      alert('Failed to update status. Is n8n running?');
+      alert('Failed to update status. Please guarantee n8n is running properly and running the correct workflow.');
     }
   };
 
@@ -99,7 +104,7 @@ export function AttendanceList() {
       {/* Page Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-base font-semibold text-[#1B2559]">
-          HR Attendance — Strike Counter
+          Attendance List
         </h1>
         <div className="flex items-center gap-3">
           {/* Search */}
@@ -197,24 +202,50 @@ export function AttendanceList() {
               </div>
 
               {/* Actions */}
-              {emp.excused !== 'APPROVED' ? (
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => handleExcuseAction(emp.employee_id, 'APPROVED')}
-                    className="inline-flex items-center px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-md text-[10px] font-medium transition-colors"
-                  >
-                    <Check size={10} className="mr-0.5" /> Approve
-                  </button>
-                  <button
-                    onClick={() => handleExcuseAction(emp.employee_id, 'REJECTED')}
-                    className="inline-flex items-center px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-md text-[10px] font-medium transition-colors"
-                  >
-                    <X size={10} className="mr-0.5" /> Reject
-                  </button>
-                </div>
-              ) : (
-                <span className="text-[#8F9BB3] font-medium bg-[#F4F6FA] px-2 py-1 rounded-full text-[10px]">Already Excused</span>
-              )}
+              <div className="flex items-center gap-2">
+                {emp.excused !== 'APPROVED' && (
+                  <>
+                    <button
+                      onClick={() => handleExcuseAction(emp.employee_id, 'APPROVED')}
+                      className="inline-flex items-center px-2 py-1 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-md text-[10px] font-medium transition-colors"
+                    >
+                      <Check size={10} className="mr-0.5" /> Approve
+                    </button>
+                    {emp.excused !== 'REJECTED' && (
+                      <button
+                        onClick={() => handleExcuseAction(emp.employee_id, 'REJECTED')}
+                        className="inline-flex items-center px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 rounded-md text-[10px] font-medium transition-colors"
+                      >
+                        <X size={10} className="mr-0.5" /> Reject
+                      </button>
+                    )}
+                    {emp.excused === 'REJECTED' && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-red-500 font-medium ml-1">✗ Rejected</span>
+                        <button
+                          onClick={() => handleExcuseAction(emp.employee_id, 'PENDING')}
+                          className="text-[#8F9BB3] hover:text-[#1B2559] transition-colors p-0.5 rounded hover:bg-[#F4F6FA]"
+                          title="Undo rejection"
+                        >
+                          <Undo2 size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+                {emp.excused === 'APPROVED' && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#8F9BB3] font-medium bg-[#F4F6FA] px-2 py-1 rounded-full text-[10px]">✓ Excused</span>
+                    <button
+                      onClick={() => handleExcuseAction(emp.employee_id, 'PENDING')}
+                      className="text-[#8F9BB3] hover:text-[#1B2559] transition-colors p-0.5 rounded hover:bg-[#F4F6FA]"
+                      title="Undo approval"
+                    >
+                      <Undo2 size={12} />
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           ))
         )}

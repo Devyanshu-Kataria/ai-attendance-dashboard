@@ -7,7 +7,9 @@ import {
   ChevronDown, Filter, Plus, Search,
   Palette, Code2, BarChart2, TrendingUp, Users,
   AlertCircle, CheckCircle, Clock, ShieldAlert, User,
-  Check, X,
+  Check, X, ShoppingCart, Globe, Briefcase, Building,
+  Megaphone, Handshake, Smartphone, Settings, HelpCircle,
+  Video, Banknote, Landmark, Film, Undo2
 } from 'lucide-react';
 import { DEPARTMENTS } from '../data/employees';
 import { supabase, type StrikeEmployee } from '../../lib/supabase';
@@ -17,10 +19,23 @@ import { useAuth } from '../App';
 // Chart data loaded dynamically
 
 const deptIcons: Record<string, React.ReactNode> = {
-  Design: <Palette size={14} className="text-[#4361EE]" />,
-  Development: <Code2 size={14} className="text-[#7B2FBE]" />,
-  'Data Science': <BarChart2 size={14} className="text-[#00B4D8]" />,
-  Sales: <TrendingUp size={14} className="text-[#F77F00]" />,
+  Design: <Palette size={14} className="text-[#8F9BB3]" />,
+  'Software Development': <Code2 size={14} className="text-[#8F9BB3]" />,
+  'Data Science': <BarChart2 size={14} className="text-[#8F9BB3]" />,
+  Sales: <TrendingUp size={14} className="text-[#8F9BB3]" />,
+  HR: <Users size={14} className="text-[#8F9BB3]" />,
+  'Human Resource': <Users size={14} className="text-[#8F9BB3]" />,
+  'Online Sales': <ShoppingCart size={14} className="text-[#8F9BB3]" />,
+  Website: <Globe size={14} className="text-[#8F9BB3]" />,
+  'Business Development': <Briefcase size={14} className="text-[#8F9BB3]" />,
+  Management: <Building size={14} className="text-[#8F9BB3]" />,
+  'Digital Marketing': <Megaphone size={14} className="text-[#8F9BB3]" />,
+  'Client Relationship Management': <Handshake size={14} className="text-[#8F9BB3]" />,
+  'Social Media': <Smartphone size={14} className="text-[#8F9BB3]" />,
+  'Operations Management': <Settings size={14} className="text-[#8F9BB3]" />,
+  Unknown: <HelpCircle size={14} className="text-[#8F9BB3]" />,
+  Cinematography: <Video size={14} className="text-[#8F9BB3]" />,
+  'Finance & Accounts': <Landmark size={14} className="text-[#8F9BB3]" />,
 };
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -120,9 +135,9 @@ export function Dashboard() {
     setLoading(false);
   };
 
-  const handleExcuseAction = async (employeeId: string, action: 'APPROVED' | 'REJECTED') => {
+  const handleExcuseAction = async (employeeId: string, action: 'APPROVED' | 'REJECTED' | 'PENDING') => {
     try {
-      await fetch('http://localhost:5678/webhook/hr-override', {
+      const response = await fetch('http://localhost:5678/webhook/hr-override', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -131,13 +146,18 @@ export function Dashboard() {
           hrManager: session?.user?.email || 'Unknown HR',
         }),
       });
+
+      if (!response.ok) {
+        throw new Error('Server returned an error');
+      }
+
       setEmployees((prev) =>
         prev.map((emp) =>
           emp.employee_id === employeeId ? { ...emp, excused: action } : emp
         )
       );
     } catch {
-      alert('Failed to update status. Is n8n running?');
+      alert('Failed to update status. Please guarantee n8n is running properly and running the correct workflow.');
     }
   };
 
@@ -176,17 +196,28 @@ export function Dashboard() {
     const defaultDepts = Array.from(new Set(employees.map(e => e.department || 'Other')));
     
     defaultDepts.forEach(dept => {
-      stats[dept] = { name: dept, total: '--', ontime: '--', late: '--', leave: '--' };
+      stats[dept] = { name: dept, total: 0, ontime: '--', late: '--', leave: '--' };
+    });
+
+    // 1. Calculate actual employee headcount per department
+    employees.forEach(e => {
+      const dept = e.department || 'Other';
+      if (stats[dept]) {
+        stats[dept].total = (stats[dept].total as number) + 1;
+      }
     });
 
     if (rawDailyRecords.length > 0) {
       defaultDepts.forEach(dept => {
-        stats[dept] = { name: dept, total: 0, ontime: 0, late: 0, leave: 0 };
+        stats[dept].ontime = 0;
+        stats[dept].late = 0;
+        stats[dept].leave = 0;
       });
+      
+      // 2. Tally up late / on-time from raw daily records
       rawDailyRecords.forEach(r => {
         const dept = r.department || 'Other';
-        if (!stats[dept]) stats[dept] = { name: dept, total: 0, ontime: 0, late: 0, leave: 0 };
-        stats[dept].total = (stats[dept].total as number) + 1;
+        if (!stats[dept]) return;
         if (r.late_flag === 'YES' || r.late_flag === 'LC') {
           stats[dept].late = (stats[dept].late as number) + 1;
         } else if (r.late_flag === 'NO') {
@@ -194,7 +225,7 @@ export function Dashboard() {
         }
       });
 
-      // Add leave data from leave_balances joined via employee_id → department in employees
+      // 3. Add leave data from leave_balances
       const empDeptMap: Record<string, string> = {};
       employees.forEach(e => { empDeptMap[e.employee_id] = e.department || 'Other'; });
       rawLeaveBalances.forEach(lb => {
@@ -205,7 +236,8 @@ export function Dashboard() {
         }
       });
     }
-    return Object.values(stats);
+    
+    return Object.values(stats).sort((a, b) => (b.total as number) - (a.total as number));
   }, [rawDailyRecords, employees, rawLeaveBalances]);
 
   const filtered = employees
@@ -291,21 +323,21 @@ export function Dashboard() {
               <div key={dept.name} className="border border-[#EEF0F6] rounded-xl p-3">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <p className="text-[10px] text-[#8F9BB3] leading-none">Total</p>
+                    <p className="text-[10px] text-[#8F9BB3] leading-none">Employees</p>
                     <p className="text-xl font-semibold text-[#1B2559] leading-tight">{dept.total}</p>
                   </div>
                   <div className="text-right text-[10px] text-[#8F9BB3] space-y-0.5">
                     <div className="flex items-center justify-end gap-1">
                       <span>On-time</span>
-                      <span className="font-semibold text-[#1B2559]">{String(dept.ontime).padStart(2, '0')}</span>
+                      <span className="font-semibold text-[#1B2559]">{String((dept as any).ontime)}</span>
                     </div>
                     <div className="flex items-center justify-end gap-1">
                       <span>Late</span>
-                      <span className="font-semibold text-[#1B2559]">{String(dept.late).padStart(2, '0')}</span>
+                      <span className="font-semibold text-[#1B2559]">{String((dept as any).late)}</span>
                     </div>
                     <div className="flex items-center justify-end gap-1">
                       <span>Leave</span>
-                      <span className="font-semibold text-[#1B2559]">{dept.leave !== '--' ? String(dept.leave).padStart(2, '0') : '--'}</span>
+                      <span className="font-semibold text-[#1B2559]">{(dept as any).leave !== '--' ? String((dept as any).leave) : '--'}</span>
                     </div>
                   </div>
                 </div>
@@ -323,7 +355,7 @@ export function Dashboard() {
           <div className="p-4 border-b border-[#EEF0F6]">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold text-[#1B2559]">Employees</span>
-              <button onClick={fetchData} className="text-[10px] text-[#4361EE] font-medium hover:underline">Refresh</button>
+              <button onClick={() => fetchData()} className="text-[10px] text-[#4361EE] font-medium hover:underline">Refresh</button>
             </div>
             {/* Filter tabs */}
             <div className="flex gap-3">
@@ -382,23 +414,48 @@ export function Dashboard() {
                       <span className="text-[10px] text-[#8F9BB3]">{emp.monthly_late_count} late days</span>
                     </div>
                     {emp.excused !== 'APPROVED' && (
-                      <div className="flex gap-1 mt-1.5">
-                        <button
-                          onClick={() => handleExcuseAction(emp.employee_id, 'APPROVED')}
-                          className="flex items-center px-1.5 py-0.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded text-[10px] font-medium transition-colors"
-                        >
-                          <Check size={9} className="mr-0.5" /> Approve
-                        </button>
-                        <button
-                          onClick={() => handleExcuseAction(emp.employee_id, 'REJECTED')}
-                          className="flex items-center px-1.5 py-0.5 bg-red-50 text-red-500 hover:bg-red-100 rounded text-[10px] font-medium transition-colors"
-                        >
-                          <X size={9} className="mr-0.5" /> Reject
-                        </button>
-                      </div>
+                      <>
+                        <div className="flex gap-1 mt-1.5">
+                          <button
+                            onClick={() => handleExcuseAction(emp.employee_id, 'APPROVED')}
+                            className="flex items-center px-1.5 py-0.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded text-[10px] font-medium transition-colors"
+                          >
+                            <Check size={9} className="mr-0.5" /> Approve
+                          </button>
+                          {emp.excused !== 'REJECTED' && (
+                            <button
+                              onClick={() => handleExcuseAction(emp.employee_id, 'REJECTED')}
+                              className="flex items-center px-1.5 py-0.5 bg-red-50 text-red-500 hover:bg-red-100 rounded text-[10px] font-medium transition-colors"
+                            >
+                              <X size={9} className="mr-0.5" /> Reject
+                            </button>
+                          )}
+                        </div>
+                        {emp.excused === 'REJECTED' && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="text-[10px] text-red-500 font-medium">✗ Rejected</span>
+                            <button
+                              onClick={() => handleExcuseAction(emp.employee_id, 'PENDING')}
+                              className="text-[#8F9BB3] hover:text-[#1B2559] transition-colors p-0.5 rounded hover:bg-[#F4F6FA]"
+                              title="Undo rejection"
+                            >
+                              <Undo2 size={11} />
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                     {emp.excused === 'APPROVED' && (
-                      <span className="text-[10px] text-[#4361EE] mt-1 block">✓ Excused</span>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span className="text-[10px] text-[#4361EE] font-medium">✓ Excused</span>
+                        <button
+                          onClick={() => handleExcuseAction(emp.employee_id, 'PENDING')}
+                          className="text-[#8F9BB3] hover:text-[#1B2559] transition-colors p-0.5 rounded hover:bg-[#EEF2FF]"
+                          title="Undo approval"
+                        >
+                          <Undo2 size={11} />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
