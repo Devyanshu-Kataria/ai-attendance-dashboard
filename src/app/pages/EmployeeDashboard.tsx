@@ -193,7 +193,7 @@ export function EmployeeDashboard() {
           <LayoutGrid size={14} className="text-white" />
         </div>
         <div className="flex-1">
-          <span className="text-xs font-semibold text-[#1B2559]">Growify Digital LLP</span>
+          <span className="text-xs font-semibold text-[#1B2559]">Punctual.ai</span>
           <span className="text-[11px] text-[#8F9BB3] ml-2">• Employee Portal</span>
         </div>
 

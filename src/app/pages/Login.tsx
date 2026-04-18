@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Lock, User, Mail, LayoutGrid, ShieldCheck } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Lock, User, Mail, LayoutGrid, ShieldCheck, Sun, Moon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 export function LoginPage() {
@@ -9,6 +9,23 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    if (document.documentElement.classList.contains('dark')) {
+      setIsDark(true);
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    if (isDark) {
+      document.documentElement.classList.remove('dark');
+      setIsDark(false);
+    } else {
+      document.documentElement.classList.add('dark');
+      setIsDark(true);
+    }
+  };
 
   /** Surface errors as returned by Supabase directly */
   const friendlyError = (msg: string): string => {
@@ -69,12 +86,21 @@ export function LoginPage() {
     }
   };
 
-  const inputClass = "w-full pl-9 pr-3 py-2.5 text-sm text-[#1B2559] bg-[#F4F6FA] border border-[#EEF0F6] rounded-lg outline-none focus:border-[#4361EE] focus:ring-1 focus:ring-[#4361EE] placeholder:text-[#8F9BB3] transition-colors";
-  const labelClass = "block text-xs font-semibold text-[#1B2559] uppercase tracking-wider mb-1.5";
+  const inputClass = "w-full pl-9 pr-3 py-2.5 text-sm text-[#1B2559] dark:text-white bg-[#F4F6FA] dark:bg-[#0B1437] border border-[#EEF0F6] dark:border-white/10 rounded-lg outline-none focus:border-[#4361EE] focus:ring-1 focus:ring-[#4361EE] placeholder:text-[#8F9BB3] dark:placeholder:text-[#A3AED0] transition-colors";
+  const labelClass = "block text-xs font-semibold text-[#1B2559] dark:text-white uppercase tracking-wider mb-1.5";
   const iconClass  = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none";
 
   return (
-    <div className="min-h-screen bg-[#F0F2F8] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#F0F2F8] dark:bg-[#0B1437] flex items-center justify-center p-4 transition-colors duration-200 relative">
+      
+      {/* Dark Mode Toggle (Top Right) */}
+      <button 
+        onClick={toggleDarkMode}
+        className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white dark:bg-[#111C44] shadow-sm border border-[#EEF0F6] dark:border-white/10 flex items-center justify-center transition-all hover:bg-[#F4F6FA] dark:hover:bg-[#1E293B]"
+      >
+        {isDark ? <Sun size={16} className="text-[#A3AED0] hover:text-white" /> : <Moon size={16} className="text-[#1B2559] hover:text-[#4361EE]" />}
+      </button>
+
       <div className="w-full max-w-md">
 
         {/* Logo & Brand */}
@@ -85,21 +111,21 @@ export function LoginPage() {
           >
             <LayoutGrid size={22} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-[#1B2559]">Growify Digital LLP</h1>
-          <p className="text-sm text-[#8F9BB3] mt-1">
+          <h1 className="text-2xl font-bold text-[#1B2559] dark:text-white">Punctual.ai</h1>
+          <p className="text-sm text-[#8F9BB3] dark:text-[#A3AED0] mt-1">
             {isSignUp ? 'Create your account' : 'Sign in to your dashboard'}
           </p>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[#EEF0F6] p-8">
+        <div className="bg-white dark:bg-[#111C44] rounded-2xl shadow-sm border border-[#EEF0F6] dark:border-white/10 p-8 transition-colors duration-200">
           <form onSubmit={handleAuth} className="space-y-5">
 
             {/* Email — always shown */}
             <div>
               <label className={labelClass}>Email Address</label>
               <div className="relative">
-                <div className={iconClass}><Mail size={15} className="text-[#8F9BB3]" /></div>
+                <div className={iconClass}><Mail size={15} className="text-[#8F9BB3] dark:text-[#A3AED0]" /></div>
                 <input
                   type="email"
                   required
@@ -117,7 +143,7 @@ export function LoginPage() {
               <div>
                 <label className={labelClass}>Employee ID</label>
                 <div className="relative">
-                  <div className={iconClass}><User size={15} className="text-[#8F9BB3]" /></div>
+                  <div className={iconClass}><User size={15} className="text-[#8F9BB3] dark:text-[#A3AED0]" /></div>
                   <input
                     type="text"
                     required
@@ -128,7 +154,7 @@ export function LoginPage() {
                     className={inputClass}
                   />
                 </div>
-                <p className="mt-1 text-[11px] text-[#8F9BB3]">
+                <p className="mt-1 text-[11px] text-[#8F9BB3] dark:text-[#A3AED0]">
                   Enter the Employee ID provided by HR
                 </p>
               </div>
@@ -138,7 +164,7 @@ export function LoginPage() {
             <div>
               <label className={labelClass}>Password</label>
               <div className="relative">
-                <div className={iconClass}><Lock size={15} className="text-[#8F9BB3]" /></div>
+                <div className={iconClass}><Lock size={15} className="text-[#8F9BB3] dark:text-[#A3AED0]" /></div>
                 <input
                   type="password"
                   required
@@ -153,7 +179,7 @@ export function LoginPage() {
 
             {/* Error */}
             {errorMsg && (
-              <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              <div className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-lg px-3 py-2">
                 {errorMsg}
               </div>
             )}
@@ -171,9 +197,9 @@ export function LoginPage() {
 
           {/* Divider */}
           <div className="my-5 flex items-center gap-3">
-            <div className="flex-1 h-px bg-[#EEF0F6]" />
-            <span className="text-[11px] text-[#8F9BB3]">or</span>
-            <div className="flex-1 h-px bg-[#EEF0F6]" />
+            <div className="flex-1 h-px bg-[#EEF0F6] dark:bg-white/10" />
+            <span className="text-[11px] text-[#8F9BB3] dark:text-[#A3AED0]">or</span>
+            <div className="flex-1 h-px bg-[#EEF0F6] dark:bg-white/10" />
           </div>
 
           {/* Admin Login via Google */}
@@ -186,7 +212,7 @@ export function LoginPage() {
               <ShieldCheck size={16} className="text-white/90" />
               Admin Login
             </button>
-            <p className="mt-2 text-center text-[11px] text-[#8F9BB3]">
+            <p className="mt-2 text-center text-[11px] text-[#8F9BB3] dark:text-[#A3AED0]">
               🔒 For administrators only — sign in with your Google Workspace account
             </p>
           </div>
@@ -195,7 +221,7 @@ export function LoginPage() {
           <div className="mt-5 text-center">
             <button
               onClick={() => { setIsSignUp(!isSignUp); setErrorMsg(''); setEmpId(''); }}
-              className="text-xs font-medium text-[#4361EE] hover:text-[#3A0CA3] transition-colors"
+              className="text-xs font-medium text-[#4361EE] dark:text-[#4361EE] hover:text-[#3A0CA3] dark:hover:text-white transition-colors"
             >
               {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
             </button>
