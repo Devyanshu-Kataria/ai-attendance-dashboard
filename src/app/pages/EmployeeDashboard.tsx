@@ -287,6 +287,9 @@ export function EmployeeDashboard() {
                   <div className="bg-white rounded-xl border border-[#EEF0F6] p-5 shadow-sm">
                     {[
                       { label: 'Name', value: employeeData.name },
+                      { label: 'Role', value: leaveData?.designation || 'N/A' },
+                      { label: 'Department', value: leaveData?.department || employeeData.department || 'N/A' },
+                      { label: 'Manager', value: 'N/A' },
                       { label: 'Month', value: employeeData.month_year },
                       { label: 'Last Late Date', value: employeeData.last_warning_date },
                       { label: 'Strike Level', value: String(employeeData.strike_level) },
